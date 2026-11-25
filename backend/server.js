@@ -27,6 +27,7 @@ const server = http.createServer(async (req,res) => {
         case 'scenario': factory.scenario(action.name); break;
         case 'reset': factory.reset(); break;
         case 'step': factory.running = false; factory.step(); break;
+        case 'random-traffic': factory.setRandomTraffic(action.enabled,action.seed); break;
         case 'pause': factory.running = false; break;
         case 'play': factory.running = !factory.running; break;
         case 'station': factory.toggleStation(action.id); break;

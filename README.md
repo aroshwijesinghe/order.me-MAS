@@ -99,7 +99,7 @@ New customer visits take two simulation hours to reach reception, one hour to su
 
 Use **Customer reception visit** in MAS demonstrations for a reproducible example. Customer sprites follow the simulation clock, with display interpolation between steps. Customers disappear after returning to the entrance while their accepted orders continue.
 
-The engine records received messages and decision-time observations as percepts. The profile lists the complete recorded input history for the selected role. The controller exposes exact current modeled resource state. The implemented environment is classified as fully observable, deterministic, sequential, dynamic across simulation ticks, discrete, known and multi-agent. The profile explains the basis and distinguishes alternative classifications. Future user interventions remain unknown. Policies use reactive adaptation and fixed decision rules.
+The engine records received messages and decision-time observations as percepts. The profile lists the complete recorded input history for the selected role. The controller exposes exact current modeled resource state. The modeled processing environment is fully observable, deterministic, sequential, dynamic across simulation ticks, discrete, known and multi-agent. Random customer mode adds sampled external arrivals, and the profile updates its outcome classification accordingly. The profile explains the basis and distinguishes alternative classifications. Future user interventions remain unknown. Policies use reactive adaptation and fixed decision rules.
 
 Agent architecture labels are implementation-specific interpretations using the terminology in [Artificial Intelligence ? A Modern Approach, Chapter 2](https://aima.cs.berkeley.edu/4th-ed/pdfs/newchap02.pdf). The profile identifies Monitor as simple reflex, Stores/Calendar/Customer as model-based reflex, production and workforce roles as goal-based, and Order/Logistics as utility-based. Scores and evaluation criteria are explained per role.
 
@@ -125,3 +125,14 @@ Road drawing and vehicle movement share the road geometry in `frontend/roads.js`
 The operations manager is the assigned contact for every current customer order. Customer-facing messages pass through that manager in both directions. The message router records an internal-to-manager hop followed by a manager-to-customer hop, or a customer-to-manager hop followed by the approved internal request. Relays retain the order/conversation identifier and record the originating message.
 
 Internal order agents run in the company's production-planning workspace and are displayed at the production manager. The live map, message replay, communication log and percept histories use the routed sender and receiver. Calendar commitments and truck delivery reports reach customers through the manager.
+
+
+## Random customer traffic
+
+Enable **Random customer arrivals** above the live map, then use **Auto run** or **Next hour**. The **Random customer day** scenario also enables it after resetting the factory.
+
+A new visitor is generated every 2?6 simulation hours. Quantities range from 20?80 garments. Customer locations and Normal, High and Urgent priorities are sampled in shuffled groups of three so each group includes every customer location and priority. Delivery lead times vary with urgency. Every visitor walks to reception, submits through the operations manager and leaves. New orders trigger priority-based replanning while active operations complete.
+
+The live map shows the next arrival, generated visitor count and priority-sorted planning queue. Disable the checkbox to stop generating visitors. Existing visitors and orders finish through the normal resource constraints. Fabric shortages can be resolved in the Stores profile.
+
+Traffic uses a seeded pseudo-random generator for reproducible checks, with a fresh seed on each enable. The API accepts an optional integer seed on the `random-traffic` action. Reset disables traffic. Generation stops near the 1000-hour planning horizon.

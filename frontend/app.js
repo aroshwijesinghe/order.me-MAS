@@ -32,6 +32,7 @@ function communicationColor(message) {
 function currentMapMessage() { return communicationActive ? currentMessage() : undefined; }
 
 const scenarios = [
+  ['random', 'Random customer day', 'Enable varied customers, quantities and priorities. Auto run or step through the arrivals.'],
   ['visit', 'Customer reception visit', 'A customer arrives, submits an order and leaves. Advance simulation time to follow the visit.'],
   ['outage', 'Production line outage', 'Sewing A pauses. Orders negotiate with the remaining line.'],
   ['staff', 'Worker absence', 'HR has six workers. Reduced staffing slows future production.'],
@@ -236,6 +237,10 @@ function render() {
   $('map-play').textContent = state.running ? 'Pause' : 'Auto run';
   $('map-step-mode').setAttribute('aria-pressed', String(!state.running));
   $('map-play').setAttribute('aria-pressed', String(state.running));
+  $('random-customers').checked = state.randomTraffic.enabled;
+  $('random-traffic-status').textContent = state.randomTraffic.enabled
+    ? 'Next visitor at ' + timeAt(state.randomTraffic.nextAt) + ' | ' + state.randomTraffic.generated + ' generated'
+    : 'Off | ' + state.randomTraffic.generated + ' generated';
   const delivered = state.orders.filter(o => o.status === 'Delivered').length;
   const onTime = state.orders.filter(o => deliveryFor(o)?.end <= o.deadline).length;
   const transit = state.orders.filter(o => o.status === 'In transit').length;
@@ -304,7 +309,7 @@ function renderVisitors() {
     marker.innerHTML = '<img src="/assets/customer-visitor.png" alt="" draggable="false"><strong>' + escape(visit.customer) + '</strong><small>' + escape(visit.phase) + '</small>' + (visit.id === speakingVisit?.id ? '<span class="visit-speech">Manager, please arrange ' + visit.order.quantity + ' garments.<br>Order ' + escape(visit.orderId) + ' submitted.</span>' : '');
     marker.setAttribute('aria-label', visit.customer + ', ' + visit.phase + '. Place an order through the manager');
   }
-  $('visit-status').innerHTML = '<strong>Reception visits</strong>' + (active.length ? active.map(visit => '<button data-agent="' + visit.id + '">' + escape(visit.customer) + ' | ' + escape(visit.phase) + ' | ' + (visit.orderId ? escape(visit.orderId) : 'Submit at ' + timeAt(visit.arriveAt)) + '</button>').join('') : '<p>Customers have left. Their orders continue through production and delivery.</p>');
+  $('visit-status').innerHTML = '<strong>Reception visits</strong>' + (active.length ? active.map(visit => '<button data-agent="' + visit.id + '">' + escape(visit.customer) + ' | ' + escape(visit.phase) + ' | ' + ['','Normal','High','Urgent'][visit.order.priority] + ' | ' + (visit.orderId ? escape(visit.orderId) : 'Submit at ' + timeAt(visit.arriveAt)) + '</button>').join('') : '<p>Customers have left. Their orders continue through production and delivery.</p>');
 }
 
 function agentPosition(id) {
@@ -525,6 +530,8 @@ function renderPopup(message) {
 }
 
 function renderOrders() {
+  const pending = state.orders.filter(order => order.status !== 'Delivered').sort((a,b) => b.priority-a.priority || a.deadline-b.deadline || a.id.localeCompare(b.id));
+  $('planning-queue').innerHTML = '<strong>Planning order</strong><p>Urgent, then High, then Normal. Earlier deadlines break priority ties. Active operations continue.</p><div>' + pending.map(order => '<button data-order="' + order.id + '" class="priority-' + order.priority + '">' + order.id + ' | ' + ['','Normal','High','Urgent'][order.priority] + ' | ' + escape(order.status) + '</button>').join('') + '</div>';
   $('order-list').innerHTML = state.orders.map(order => {
     const arrival = deliveryFor(order)?.end;
     const stages = ['cutting', 'sewing', 'finishing', 'delivery'];
@@ -674,6 +681,7 @@ document.addEventListener('keydown', event => {
 });
 $('profile-agent-select').onchange = event => { selected = event.target.value; renderMap(); renderAgentProfile(); };
 $('new-order').onclick = () => openOrder();
+$('random-customers').onchange = event => action('random-traffic',{enabled:event.target.checked});
 $('close-order').onclick = () => $('order-dialog').close();
 $('close-profile').onclick = () => $('agent-dialog').close();
 $('customer-profile').onclick = () => {
@@ -849,7 +857,7 @@ function agentDetails(agent) {
       actions: ['Walk to reception', 'Submit the configured order to the manager', 'Receive manager acknowledgement', 'Leave reception', 'Receive delivery updates from the manager'],
       knowledge: 'Own requested quantity, delivery deadline, destination and visit schedule.',
       criteria: 'Submit exactly once on arrival and leave while the factory continues fulfilment.',
-      adaptive: 'Tracks factory confirmations. The customer request is configured by the user.'
+      adaptive: 'Tracks factory confirmations. Requests are configured by the user or sampled by the customer traffic generator.'
     }
   };
   const policy = policies[key];
@@ -902,7 +910,7 @@ function renderAgentProfile() {
   ];
   const environment = [
     ['Observability', 'Fully observable modeled state', 'The single-process controller holds exact current resource ledgers and calendars. Each role reads task-relevant fields.'],
-    ['Outcomes', 'Deterministic', 'Given the same state and external actions, transitions repeat. Stochastic failures are unimplemented.'],
+    ['Outcomes', state.randomTraffic.enabled || state.randomTraffic.generated ? 'Stochastic customer arrivals, deterministic processing' : 'Deterministic', state.randomTraffic.enabled || state.randomTraffic.generated ? 'Customer timing, quantities and priorities are sampled. Production and delivery follow fixed rules. A seed supports reproducible traffic.' : 'Given the same state and external actions, transitions repeat. Enable Random customer arrivals to sample incoming demand.'],
     ['Task dependence', 'Sequential', 'Reservations and earlier stages constrain later production and delivery decisions.'],
     ['Change over time', 'Dynamic during simulation', 'The clock and other agents change the world between decisions. A planning transaction uses a stable snapshot.'],
     ['State and time', 'Discrete', 'The engine uses integer hours, garment counts and finite actions. Smooth map motion interpolates snapshots for display.'],

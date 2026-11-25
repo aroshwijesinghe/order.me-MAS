@@ -236,3 +236,59 @@ test('all scenarios, visits and delivery receipts preserve manager-only customer
   assert.ok(factory.messages.some(message=>message.sender==='Manager' && message.forwardedFrom==='Calendar' && message.receiver==='CUSTOMER-school'));
   assert.ok(factory.messages.some(message=>message.sender==='Manager' && message.forwardedFrom?.startsWith('TRUCK-') && message.receiver==='CUSTOMER-school'));
 });
+
+test('random customers arrive at varied hours with all priorities and customer locations', () => {
+  const factory=new Factory();
+  factory.setRandomTraffic(true,12345);
+  const initialAt=factory.randomTraffic.nextAt;
+  assert.ok(initialAt>=2 && initialAt<=6);
+  while(factory.time<45) factory.step();
+  const visits=factory.visits.filter(visit=>visit.source==='random');
+  assert.ok(visits.length>=6);
+  for(let i=1;i<visits.length;i++) {
+    const gap=visits[i].start-visits[i-1].start;
+    assert.ok(gap>=2 && gap<=6);
+  }
+  assert.deepEqual([...new Set(visits.slice(0,3).map(visit=>visit.order.priority))].sort(),[1,2,3]);
+  assert.equal(new Set(visits.slice(0,3).map(visit=>visit.destination)).size,3);
+  assert.ok(new Set(visits.map(visit=>visit.order.quantity)).size>1);
+  assert.ok(visits.every(visit=>visit.order.quantity>=20 && visit.order.quantity<=80 && visit.order.deadline>visit.arriveAt));
+  assert.ok(factory.orders.some(order=>order.source==='random'));
+  for(const message of factory.messages) {
+    if(message.sender.startsWith('CUSTOMER-'))assert.equal(message.receiver,'Manager');
+    if(message.receiver.startsWith('CUSTOMER-'))assert.equal(message.sender,'Manager');
+  }
+  checkSchedule(factory);
+});
+
+test('seeded traffic repeats, stops generating when disabled and leaves queued visits intact', () => {
+  const first=new Factory();
+  const second=new Factory();
+  first.setRandomTraffic(true,77);
+  second.setRandomTraffic(true,77);
+  for(let i=0;i<12;i++){first.step();second.step();}
+  assert.deepEqual(first.visits,second.visits);
+  const generated=first.randomTraffic.generated;
+  first.setRandomTraffic(false);
+  for(let i=0;i<8;i++)first.step();
+  assert.equal(first.randomTraffic.generated,generated);
+  assert.equal(first.randomTraffic.nextAt,null);
+  assert.ok(first.visits.filter(visit=>visit.source==='random').every(visit=>visit.orderId));
+  first.reset();
+  assert.equal(first.randomTraffic.enabled,false);
+  assert.equal(first.randomTraffic.generated,0);
+  assert.throws(()=>first.setRandomTraffic('yes'));
+});
+
+test('new urgent requests receive future slots before normal requests and horizon stops traffic safely', () => {
+  const factory=new Factory();
+  const normal=factory.addOrder({name:'Normal new batch',quantity:20,priority:1,deadline:50});
+  const urgent=factory.addOrder({name:'Urgent new batch',quantity:20,priority:3,deadline:50});
+  const cut=id=>factory.bookings.find(booking=>booking.orderId===id && booking.stage==='cutting');
+  assert.ok(cut(urgent.id).start<cut(normal.id).start);
+  factory.setRandomTraffic(true,9);
+  factory.time=960;
+  factory.randomTraffic.nextAt=960;
+  assert.doesNotThrow(()=>factory.step());
+  assert.equal(factory.randomTraffic.enabled,false);
+});

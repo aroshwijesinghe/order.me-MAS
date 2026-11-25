@@ -23,6 +23,10 @@ export class Factory {
     this.materialConsumed = [];
     this.visits = [];
     this.visitSequence = 0;
+    this.randomTraffic = { enabled: false, nextAt: null, generated: 0, seed: null };
+    this.randomState = 0;
+    this.priorityPool = [];
+    this.customerPool = [];
     this.stock = 650;
     this.workers = 10;
     this.roadDelayed = false;
@@ -252,15 +256,61 @@ export class Factory {
     return { name: name.trim(), customer: customer.trim(), destination, quantity, priority, deadline };
   }
 
-  queueCustomer(input) {
-    const arriveAt = Math.max(this.time + 2, ...this.visits.filter(v => !v.orderId).map(v => v.arriveAt + 1));
+  nextCustomerArrival() {
+    return Math.max(this.time + 2, ...this.visits.filter(visit => !visit.orderId).map(visit => visit.arriveAt + 1));
+  }
+
+  queueCustomer(input, source = 'manual') {
+    const arriveAt = this.nextCustomerArrival();
     const order = this.validateOrder(input);
     if (order.deadline <= arriveAt) throw new Error('Delivery deadline must be later than customer arrival at hour ' + arriveAt);
     const visit = { id: 'VISIT-' + (++this.visitSequence), customer: order.customer, destination: order.destination,
-      start: arriveAt - 2, arriveAt, departAt: arriveAt + 1, end: arriveAt + 3, orderId: null, order };
+      start: arriveAt - 2, arriveAt, departAt: arriveAt + 1, end: arriveAt + 3, orderId: null, order, source };
     this.visits.push(visit);
     this.message('CUSTOMER-' + order.destination, 'Manager', 'INFORM', order.customer + ' is visiting reception. Order submission at hour ' + arriveAt + '.');
     return visit;
+  }
+
+  randomNumber(limit) {
+    this.randomState = (Math.imul(this.randomState,1664525) + 1013904223) >>> 0;
+    return Math.floor(this.randomState / 4294967296 * limit);
+  }
+
+  setRandomTraffic(enabled, seed = Math.floor(Math.random() * 4294967296)) {
+    if (typeof enabled !== 'boolean') throw new Error('Random arrivals must be enabled or disabled');
+    if (!Number.isInteger(seed) || seed < 0 || seed > 4294967295) throw new Error('Seed must be an unsigned 32-bit integer');
+    if (enabled === this.randomTraffic.enabled) return;
+    if (enabled && this.nextCustomerArrival() + 40 > 1000) throw new Error('Random arrivals require at least 40 hours before the simulation horizon');
+    this.randomTraffic.enabled = enabled;
+    if (enabled) {
+      this.randomTraffic.seed = seed;
+      this.randomState = seed;
+      this.priorityPool = [];
+      this.customerPool = [];
+      this.randomTraffic.nextAt = this.time + 2 + this.randomNumber(5);
+    } else this.randomTraffic.nextAt = null;
+    this.observe('Manager','Customer traffic',enabled ? 'Random customer arrivals enabled' : 'Random customer arrivals disabled');
+  }
+
+  generateRandomCustomer() {
+    const arrival = this.nextCustomerArrival();
+    if (arrival + 40 > 1000) {
+      this.setRandomTraffic(false);
+      return;
+    }
+    if (!this.priorityPool.length) this.priorityPool = [1,2,3];
+    if (!this.customerPool.length) this.customerPool = [...LOCATIONS];
+    const priority = this.priorityPool.splice(this.randomNumber(this.priorityPool.length),1)[0];
+    const location = this.customerPool.splice(this.randomNumber(this.customerPool.length),1)[0];
+    const quantity = 20 + this.randomNumber(7) * 10;
+    const leadTime = {1:28,2:20,3:12}[priority] + this.randomNumber(9);
+    const products = {school:'School uniform batch',sports:'Sportswear batch',workwear:'Workwear batch'};
+    this.queueCustomer({
+      name: products[location.id], customer: location.name, destination: location.id,
+      quantity, priority, deadline: arrival + leadTime
+    },'random');
+    this.randomTraffic.generated++;
+    this.randomTraffic.nextAt = this.time + 2 + this.randomNumber(5);
   }
 
   visitPhase(visit) {
@@ -271,10 +321,10 @@ export class Factory {
     return 'Left';
   }
 
-  addOrder(input) {
-    const order = { ...this.validateOrder(input), id: 'ORD-' + (101 + this.orders.length), managerId: 'Manager' };
+  addOrder(input, source = 'manual') {
+    const order = { ...this.validateOrder(input), source, id: 'ORD-' + (101 + this.orders.length), managerId: 'Manager' };
     this.orders.push(order);
-    this.message('CUSTOMER-' + order.destination, 'Manager', 'REQUEST', 'Place ' + order.quantity + ' garments for ' + order.customer + ', due hour ' + order.deadline, order.id);
+    this.message('CUSTOMER-' + order.destination, 'Manager', 'REQUEST', 'Place ' + order.quantity + ' garments for ' + order.customer + ', priority ' + ['','Normal','High','Urgent'][order.priority] + ', due hour ' + order.deadline, order.id);
     this.message('Manager', 'Coordinator', 'REQUEST', 'Approve order and negotiate materials, staff, production and delivery', order.id);
     this.replan();
     return order;
@@ -296,9 +346,10 @@ export class Factory {
       this.message('Stores', booking.station, 'INFORM', 'Issue ' + order.quantity + ' m fabric for cutting', order.id);
     }
     this.time++;
+    if (this.randomTraffic.enabled && this.time >= this.randomTraffic.nextAt) this.generateRandomCustomer();
     for (const visit of this.visits) {
       if (!visit.orderId && visit.arriveAt <= this.time) {
-        const order = this.addOrder(visit.order);
+        const order = this.addOrder(visit.order,visit.source);
         visit.orderId = order.id;
       }
       if (visit.departAt === this.time) this.message('CUSTOMER-' + visit.destination, 'Manager', 'INFORM', visit.customer + ' leaves reception. Order remains with the factory.', visit.orderId);
@@ -311,12 +362,13 @@ export class Factory {
       if (delivery.end === this.time) this.message(delivery.truck, 'CUSTOMER-' + delivery.destination, 'INFORM', 'All garments delivered. Customer receipt confirmed.', delivery.orderId);
       if (delivery.returnEnd === this.time) this.message(delivery.truck, 'Logistics', 'INFORM', 'Returned to dispatch depot', delivery.orderId);
     }
-    if (this.time >= Math.max(0, ...this.bookings.map(b => b.end), ...this.deliveries.map(d => d.returnEnd), ...this.visits.map(v => v.end))) this.running = false;
+    if (this.time >= Math.max(0, ...this.bookings.map(b => b.end), ...this.deliveries.map(d => d.returnEnd), ...this.visits.map(v => v.end), this.randomTraffic.nextAt || 0)) this.running = false;
   }
 
   scenario(name) {
-    if (!['visit', 'outage', 'scarcity', 'urgent', 'join', 'staff', 'fabric', 'truck', 'road'].includes(name)) throw new Error('Unknown scenario');
+    if (!['random', 'visit', 'outage', 'scarcity', 'urgent', 'join', 'staff', 'fabric', 'truck', 'road'].includes(name)) throw new Error('Unknown scenario');
     this.reset();
+    if (name === 'random') this.setRandomTraffic(true);
     if (name === 'visit') this.queueCustomer({ name: 'Visitor uniform order', customer: 'New campus customer', quantity: 60, priority: 2, deadline: 30, destination: 'school' });
     if (name === 'outage') this.toggleStation('SEW-A');
     if (name === 'scarcity') { this.toggleStation('SEW-A'); this.toggleStation('SEW-B'); }
@@ -347,7 +399,7 @@ export class Factory {
   state() {
     const reserved = this.orders.filter(o => !this.materialConsumed.includes(o.id) && this.bookings.some(b => b.orderId === o.id && b.stage === 'cutting')).reduce((sum, o) => sum + o.quantity, 0);
     return {
-      percepts: this.percepts, epoch: this.epoch, round: this.round, time: this.time, running: this.running,
+      randomTraffic: { ...this.randomTraffic }, percepts: this.percepts, epoch: this.epoch, round: this.round, time: this.time, running: this.running,
       orders: this.orders.map(o => ({ ...o, status: this.orderStatus(o) })),
       visits: this.visits.map(v => ({ ...v, phase: this.visitPhase(v) })),
       stations: this.stations, trucks: this.trucks, deliveries: this.deliveries,
