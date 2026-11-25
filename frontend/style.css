@@ -223,3 +223,15 @@ input,select{display:block;width:100%;padding:10px;border:1px solid #c7d6cb;bord
 #map-step-mode[aria-pressed="true"] { background: #e7f1e4; border-color: #7b9f74; font-weight: 700; }
 .map-controls { gap: 6px; }
 .map-controls button { padding: 8px 10px; }
+
+.traffic-controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; padding: 0 22px 18px; }
+.traffic-controls label { display: flex; gap: 8px; align-items: center; font-size: 14px; font-weight: 700; }
+.traffic-controls input { margin: 0; }
+.traffic-controls span { font-size: 13px; color: #3d6a51; }
+.traffic-controls small { width: 100%; font-size: 13px; color: #6a7e6d; }
+.planning-queue { padding: 16px 22px; border-top: 1px solid #e2eade; background: #f5f8f0; }
+.planning-queue strong { font-size: 14px; }
+.planning-queue > div { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 12px; }
+.planning-queue button { font-size: 12px; padding: 7px 10px; }
+.planning-queue .priority-3 { border-color: #c68b3e; background: #fff2d9; color: #8c581b; }
+.planning-queue .priority-2 { border-color: #8c83bc; background: #f0ebfa; color: #68538d; }

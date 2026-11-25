@@ -276,3 +276,19 @@ test('internal order agents are drawn in the company workspace and customer rela
   ui.run("selected='CUSTOMER-school'; renderAgentProfile()");
   assert.match(ui.elements.get('agent-profile').innerHTML,/Communication partners include Manager\./);
 });
+
+test('random traffic status, priorities and planning order are visible on the map', () => {
+  const ui=createUI();
+  const factory=new Factory();
+  factory.setRandomTraffic(true,12345);
+  for(let i=0;i<18;i++)factory.step();
+  ui.state(factory);
+  assert.equal(ui.elements.get('random-customers').checked,true);
+  assert.match(ui.elements.get('random-traffic-status').textContent,/Next visitor/);
+  const queue=ui.elements.get('planning-queue').innerHTML;
+  assert.match(queue,/Urgent/);
+  assert.match(queue,/High/);
+  assert.match(queue,/Normal/);
+  ui.run("selected='Manager'; renderAgentProfile()");
+  assert.match(ui.elements.get('agent-profile').innerHTML,/Stochastic customer arrivals/);
+});
