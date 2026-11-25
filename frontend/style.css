@@ -131,7 +131,6 @@ input,select{display:block;width:100%;padding:10px;border:1px solid #c7d6cb;bord
 .customer-marker.walking img { animation: customer-walk .5s ease-in-out infinite alternate; }
 .customer-marker.leaving img { transform: scaleX(-1); animation-name: customer-walk-return; }
 .gate-label { position: absolute; bottom: 1%; left: 2%; color: #58705d; font-size: 10px; }
-.visit-speech { position: absolute; top: -50px; left: 48px; width: 155px; padding: 8px; border: 1px solid var(--communication-color, #0284c7); border-radius: 8px; background: #fff; font-size: 10px; text-align: left; box-shadow: 0 3px 12px #334b3022; }
 #visit-status { padding: 16px 22px; background: #edf3e8; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 #visit-status > strong { font-size: 13px; width: 100%; }
 #visit-status button { font-size: 12px; padding: 7px 10px; }

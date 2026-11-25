@@ -167,7 +167,8 @@ test('customer markers move to reception and disappear after leaving while their
   assert.notEqual(ui.elements.get('node-'+visit.id).style.top,initial);
   factory.step();
   ui.state(factory);
-  assert.match(ui.elements.get('node-'+visit.id).innerHTML,/Order ORD-104 submitted/);
+  assert.match(ui.elements.get('node-'+visit.id).innerHTML,/Placing order/);
+  assert.ok(!ui.elements.get('node-'+visit.id).innerHTML.includes('visit-speech'));
   for(let i=0;i<3;i++){factory.step();ui.state(factory);}
   assert.equal(ui.elements.get('node-'+visit.id).style.top,'94%');
   assert.equal(ui.elements.get('node-'+visit.id).style.opacity,'0');
