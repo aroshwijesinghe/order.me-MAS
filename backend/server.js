@@ -37,10 +37,11 @@ const server = http.createServer(async (req,res) => {
   }
   const asset = assets[pathname];
   if (req.method === 'GET' && asset) {
-    try { res.writeHead(200, {'Content-Type':asset[1]}); res.end(await readFile(new URL(`./public/${asset[0]}`, import.meta.url))); }
+    try { res.writeHead(200, {'Content-Type':asset[1]}); res.end(await readFile(new URL(`../frontend/${asset[0]}`, import.meta.url))); }
     catch { res.end('Asset unavailable'); }
     return;
   }
   res.writeHead(404); res.end('Not found');
 });
-server.listen(Number(process.env.PORT || 3000), '127.0.0.1', () => console.log('Order.me running at http://localhost:3000'));
+const port = Number(process.env.PORT || 3000);
+server.listen(port, '127.0.0.1', () => console.log(`Order.me running at http://localhost:${port}`));

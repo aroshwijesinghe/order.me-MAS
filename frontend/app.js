@@ -1,3 +1,4 @@
+let replayIndex = 0, replayTimer;
 let state, selected = 'Coordinator', filter = null;
 const $ = id => document.getElementById(id);
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -13,6 +14,7 @@ async function action(type, extra = {}) {
 }
 function end(order) { return state.bookings.find(b => b.orderId === order.id && b.stage === 'finishing')?.end; }
 function render() {
+  renderNegotiation();
   $('clock').textContent = `Hour ${String(state.time).padStart(2,'0')}`;
   $('status').textContent = state.running ? 'Production in progress' : 'Simulation paused';
   $('play').textContent = state.running ? 'Pause simulation' : 'Run simulation';
@@ -61,3 +63,37 @@ $('order-form').onsubmit = async event=>{
 const events = new EventSource('/events');
 events.onmessage = event=>{state=JSON.parse(event.data);if(!state.orders.some(o=>o.id===selected)&&selected.startsWith('ORD'))selected='Coordinator';render();$('connection').textContent='● Live connection';};
 events.onerror = ()=>{$('connection').textContent='Reconnecting…';};
+
+function renderNegotiation() {
+  replayIndex = Math.min(replayIndex, Math.max(0, state.messages.length - 1));
+  const message = state.messages[replayIndex];
+  const roles = [
+    ['Order agents', 'Request capacity and choose the earliest complete route.'],
+    ['Station agents', 'Offer available slots using production rates and reservations.'],
+    ['Coordinator', 'Apply priority and deadlines, then commit the selected route.'],
+    ['Monitor', 'Observe disruptions and trigger new negotiations.']
+  ];
+  $('agent-flow').innerHTML = roles.map(([name, description]) => '<article><strong>' + name + '</strong><p>' + description + '</p></article>').join('');
+  $('event-position').textContent = state.messages.length ? 'Message ' + (replayIndex + 1) + ' of ' + state.messages.length : 'No messages';
+  $('event-detail').innerHTML = message ? '<div class="exchange"><strong>' + escape(message.sender) + '</strong><span>? ' + escape(message.type) + ' ?</span><strong>' + escape(message.receiver) + '</strong></div><p>' + escape(message.detail) + '</p><small>Simulation hour ' + message.time + ' ? Event ' + message.id + '</small>' : '';
+  $('event-back').disabled = replayIndex === 0;
+  $('event-next').disabled = replayIndex >= state.messages.length - 1;
+}
+function stopReplay() {
+  clearInterval(replayTimer);
+  replayTimer = undefined;
+  $('replay').textContent = 'Replay negotiation';
+}
+$('event-back').onclick = () => { stopReplay(); replayIndex--; renderNegotiation(); };
+$('event-next').onclick = () => { stopReplay(); replayIndex++; renderNegotiation(); };
+$('replay').onclick = () => {
+  if (replayTimer) { stopReplay(); return; }
+  replayIndex = 0;
+  renderNegotiation();
+  $('replay').textContent = 'Pause replay';
+  replayTimer = setInterval(() => {
+    if (replayIndex >= state.messages.length - 1) { stopReplay(); return; }
+    replayIndex++;
+    renderNegotiation();
+  }, 900);
+};

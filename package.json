@@ -1,1 +1,13 @@
-{"name":"order-me-mas","version":"1.0.0","private":true,"type":"module","scripts":{"start":"node server.js","test":"node --test"},"engines":{"node":">=20"}}
+{
+  "name": "order-me-mas",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node backend/server.js",
+    "test": "node --test backend/engine.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
