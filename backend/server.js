@@ -26,6 +26,7 @@ const server = http.createServer(async (req,res) => {
       switch (action.type) {
         case 'scenario': factory.scenario(action.name); break;
         case 'reset': factory.reset(); break;
+        case 'micro-step': factory.running = false; factory.step(.25); break;
         case 'step': factory.running = false; factory.step(); break;
         case 'random-traffic': factory.setRandomTraffic(action.enabled,action.seed); break;
         case 'pause': factory.running = false; break;

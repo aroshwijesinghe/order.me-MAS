@@ -292,3 +292,39 @@ test('new urgent requests receive future slots before normal requests and horizo
   assert.doesNotThrow(()=>factory.step());
   assert.equal(factory.randomTraffic.enabled,false);
 });
+
+test('four manual quarter-hour steps preserve the hourly engine result', () => {
+  const hourly=new Factory();
+  const manual=new Factory();
+  hourly.step();
+  for(let i=0;i<4;i++)manual.step(.25);
+  assert.equal(manual.time,1);
+  assert.deepEqual(manual.bookings,hourly.bookings);
+  assert.deepEqual(manual.messages,hourly.messages);
+  assert.equal(manual.stock,hourly.stock);
+  assert.throws(()=>manual.step(.1));
+});
+
+test('fractional-time production and deliveries complete when hourly and small steps are mixed', () => {
+  const factory=new Factory();
+  while(factory.time<40)factory.step();
+  factory.step(.25);
+  const order=factory.addOrder({name:'Quarter-hour batch',quantity:20,priority:3,deadline:70});
+  const finish=factory.bookings.find(booking=>booking.orderId===order.id && booking.stage==='finishing');
+  const delivery=factory.deliveries.find(delivery=>delivery.orderId===order.id);
+  assert.equal(finish.end%1,.25);
+  while(factory.time<delivery.end)factory.step();
+  assert.equal(factory.state().orders.find(item=>item.id===order.id).status,'Delivered');
+  assert.ok(factory.messages.some(message=>message.orderId===order.id && message.detail==='cutting completed'));
+  assert.ok(factory.messages.some(message=>message.orderId===order.id && message.detail.includes('All garments delivered')));
+  checkSchedule(factory);
+});
+
+test('random customer generation works when enabled on a quarter-hour boundary', () => {
+  const factory=new Factory();
+  factory.step(.25);
+  factory.setRandomTraffic(true,123);
+  for(let i=0;i<60;i++)factory.step(.25);
+  assert.ok(factory.randomTraffic.generated>0);
+  assert.ok(factory.visits.filter(visit=>visit.source==='random').every(visit=>Number.isInteger(visit.order.deadline)));
+});

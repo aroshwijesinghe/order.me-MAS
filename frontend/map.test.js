@@ -292,3 +292,39 @@ test('random traffic status, priorities and planning order are visible on the ma
   ui.run("selected='Manager'; renderAgentProfile()");
   assert.match(ui.elements.get('agent-profile').innerHTML,/Stochastic customer arrivals/);
 });
+
+test('manual clock steps display current events and clear stale communication on an empty step', () => {
+  const ui=createUI();
+  const factory=new Factory();
+  ui.state(factory);
+  ui.run('freezeCommunication()');
+  const previousId=factory.messages.at(-1).id;
+  factory.step(.25);
+  ui.state(factory);
+  ui.run('showManualStepEvents('+previousId+')');
+  assert.ok(ui.run('currentMessage().id')>previousId);
+  assert.equal(ui.run('currentMessage().sender'),'Stores');
+  const nextId=factory.messages.at(-1).id;
+  factory.step(.25);
+  ui.state(factory);
+  ui.run('showManualStepEvents('+nextId+')');
+  assert.equal(ui.run('communicationActive'),false);
+  assert.equal(ui.elements.get('agent-popup').hidden,true);
+});
+
+test('customer communication bubbles track the visiting customer while they leave reception', () => {
+  const ui=createUI();
+  const factory=new Factory();
+  ui.state(factory);
+  factory.step();
+  ui.state(factory);
+  const departure=factory.messages.find(message=>message.orderId==='ORD-101' && message.detail.includes('leaves reception'));
+  assert.equal(ui.run('messageAgentId('+JSON.stringify(departure.sender)+','+JSON.stringify(departure)+')'),'VISIT-1');
+  ui.run('renderPopup('+JSON.stringify(departure)+')');
+  const top=ui.elements.get('agent-popup').style.top;
+  factory.step(.25);
+  ui.state(factory);
+  ui.run('renderPopup('+JSON.stringify(departure)+')');
+  assert.notEqual(ui.elements.get('agent-popup').style.top,top);
+  assert.match(ui.elements.get('agent-popup').innerHTML,/Recorded H01/);
+});
