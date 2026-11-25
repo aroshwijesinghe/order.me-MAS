@@ -117,4 +117,4 @@ The router in `frontend/routing.js` uses measured entity bounds and padded horiz
 
 ## Truck movement
 
-Road drawing and vehicle movement share the road geometry in `frontend/roads.js`. Outbound and return trips use the depot spur, main road and customer access road. Animation includes every junction crossed between clock updates. Rapid manual steps resume from the displayed position, and repeated loads return along the same route. Resizing and reduced-motion mode use road-aligned snapshot positions.
+Road drawing and vehicle movement share the road geometry in `frontend/roads.js`. Both trucks park in adjacent bays in the dispatch parking area. Each bay has its own spur into a shared access lane. Outbound and return trips use that lane, the main road and the customer access road. Animation includes every junction crossed between clock updates. Rapid manual steps resume from the displayed position, and repeated loads return along the same route. Resizing and reduced-motion mode use road-aligned snapshot positions.

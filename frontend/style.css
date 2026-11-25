@@ -206,3 +206,16 @@ input,select{display:block;width:100%;padding:10px;border:1px solid #c7d6cb;bord
 .map-controls button { padding: 8px 12px; font-size: 13px; }
 
 .truck-marker { transition: none; }
+
+#truck-parking {
+  position: absolute;
+  left: 60%;
+  top: 61%;
+  width: 19%;
+  height: 14%;
+  border: 1px solid #b6c9b6;
+  border-radius: 10px;
+  background: #dfe9d966;
+  pointer-events: none;
+}
+#truck-parking span { position: absolute; bottom: 3px; left: 0; right: 0; text-align: center; font-size: 10px; color: #5d7961; letter-spacing: .5px; }
