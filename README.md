@@ -113,3 +113,8 @@ The built-in ImageGen tool generated the additional visitor sprite at `frontend/
 The map displays one active message connection at a time. Requests are blue, proposals purple, accepted work teal or green, informational updates cyan and exceptions amber. The popup, sender/receiver highlights and arrow share the message color. A gentle pulse respects reduced-motion settings.
 
 The router in `frontend/routing.js` uses measured entity bounds and padded horizontal/vertical corridors. It chooses free departure and arrival ports, bends around obstacles, and keeps the arrowhead outside the recipient. When a fully blocked layout has no clear path, the popup still presents the message. Inspecting a recorded message keeps its connection visible until playback resumes.
+
+
+## Truck movement
+
+Road drawing and vehicle movement share the road geometry in `frontend/roads.js`. Outbound and return trips use the depot spur, main road and customer access road. Animation includes every junction crossed between clock updates. Rapid manual steps resume from the displayed position, and repeated loads return along the same route. Resizing and reduced-motion mode use road-aligned snapshot positions.

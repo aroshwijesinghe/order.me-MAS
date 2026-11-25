@@ -204,3 +204,5 @@ input,select{display:block;width:100%;padding:10px;border:1px solid #c7d6cb;bord
 .map-clock strong { display: block; font-size: 23px; line-height: 1.25; font-variant-numeric: tabular-nums; }
 .map-clock small { display: block; font-size: 11px; color: #66806c; }
 .map-controls button { padding: 8px 12px; font-size: 13px; }
+
+.truck-marker { transition: none; }
