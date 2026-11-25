@@ -184,3 +184,38 @@ test('idle communications draw no connections and live queue expiry hides the ma
   ui.run('drawConnections(currentMapMessage())');
   assert.equal(ui.strokes.length,0);
 });
+
+test('clicking each customer opens a prefilled order form and visiting customers retain their own name', () => {
+  const ui = createUI();
+  const factory = new Factory();
+  ui.state(factory);
+  assert.ok(!html.includes('inspector-panel'));
+  for (const location of factory.state().locations) {
+    ui.run('selectMapAgent(' + JSON.stringify('CUSTOMER-' + location.id) + ')');
+    assert.equal(ui.elements.get('order-dialog').open,true);
+    assert.equal(ui.elements.get('order-customer').value,location.name);
+    assert.equal(ui.elements.get('order-destination').value,location.id);
+    assert.equal(ui.elements.get('customer-profile').hidden,false);
+  }
+  const visit = factory.queueCustomer({name:'New uniforms',customer:'Custom school name',quantity:20,priority:1,deadline:30,destination:'sports'});
+  ui.state(factory);
+  ui.run('selectMapAgent(' + JSON.stringify(visit.id) + ')');
+  assert.equal(ui.elements.get('order-customer').value,'Custom school name');
+  assert.equal(ui.elements.get('order-destination').value,'sports');
+  ui.elements.get('customer-profile').onclick();
+  assert.equal(ui.elements.get('order-dialog').open,false);
+  assert.equal(ui.elements.get('agent-dialog').open,true);
+  ui.run('openOrder()');
+  assert.equal(ui.elements.get('order-customer').value,'');
+  assert.equal(ui.elements.get('agent-dialog').open,false);
+});
+
+test('resource controls remain available in popup profiles after side panel removal', () => {
+  const ui = createUI();
+  ui.state(new Factory());
+  for (const [agent,control] of [['HR','apply-workers'],['Stores','apply-restock'],['SEW-A','Pause station'],['TRUCK-1','Pause new trips'],['Calendar','Open all orders calendar']]) {
+    ui.run('selectMapAgent('+JSON.stringify(agent)+')');
+    assert.equal(ui.elements.get('agent-dialog').open,true);
+    assert.ok(ui.elements.get('profile-controls').innerHTML.includes(control),agent+' lost its controls');
+  }
+});

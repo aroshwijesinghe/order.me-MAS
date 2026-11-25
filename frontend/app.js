@@ -220,7 +220,6 @@ function render() {
   $('metrics').innerHTML = metrics.map(([label, value, hint]) => '<div class="metric"><small>' + label + '</small><strong>' + value + '</strong><span>' + hint + '</span></div>').join('');
   renderMap();
   renderOrders();
-  renderInspector();
   renderCalendar();
   renderMessages();
   renderEvidence();
@@ -318,7 +317,8 @@ function renderMap() {
     const speaking = message && visualAgentId(message.sender) === agent.id;
     const receiving = message && visualAgentId(message.receiver) === agent.id;
     const index = artwork[agent.id] ?? 11;
-    return '<button id="node-' + agent.id + '" class="map-node ' + (working ? 'working ' : '') + (paused ? 'paused ' : '') + (selected === agent.id ? 'selected ' : '') + (speaking ? 'speaking ' : '') + (receiving ? 'receiving' : '') + '" style="left:' + agent.x + '%;top:' + agent.y + '%" data-agent="' + agent.id + '" aria-label="' + escape(agent.name + ', ' + agent.status) + '">' + art(index) + '<strong>' + escape(agent.name) + '</strong><small>' + escape(working ? 'Working | ' + agent.status : agent.status) + '</small></button>';
+    const orderAction = agent.id.startsWith('CUSTOMER-') ? '<small class="node-order-action">Place order</small>' : '';
+    return '<button id="node-' + agent.id + '" class="map-node ' + (working ? 'working ' : '') + (paused ? 'paused ' : '') + (selected === agent.id ? 'selected ' : '') + (speaking ? 'speaking ' : '') + (receiving ? 'receiving' : '') + '" style="left:' + agent.x + '%;top:' + agent.y + '%" data-agent="' + agent.id + '" aria-label="' + escape(agent.name + ', ' + agent.status) + '">' + art(index) + '<strong>' + escape(agent.name) + '</strong><small>' + escape(working ? 'Working | ' + agent.status : agent.status) + '</small>' + orderAction + '</button>';
   }).join('');
   // Keep marker elements so CSS can interpolate actual vehicle movement between steps.
   for (const truck of state.trucks) {
@@ -492,10 +492,9 @@ function renderOrders() {
   }).join('');
 }
 
-function renderInspector() {
+function renderAgentControls() {
   if (document.activeElement?.matches('#worker-count, #restock-quantity')) return;
   const agents = allAgents();
-  $('agent-select').innerHTML = agents.map(a => '<option value="' + a.id + '"' + (selected === a.id ? ' selected' : '') + '>' + escape(a.name) + ' (' + a.id + ')</option>').join('');
   const agent = agents.find(a => a.id === selected);
   const recent = state.messages.filter(m => m.sender === selected || m.receiver === selected || m.orderId === selected).at(-1);
   let controls = '';
@@ -503,13 +502,13 @@ function renderInspector() {
   if (state.trucks.some(t => t.id === selected)) controls = '<button data-truck="' + selected + '">' + (agent.available ? 'Pause new trips' : 'Restore truck') + '</button>';
   if (selected === 'HR') controls = '<label>Workers present<input id="worker-count" type="number" min="0" max="40" value="' + state.workers + '"></label><button id="apply-workers">Apply attendance</button>';
   if (selected === 'Stores') controls = '<label>Fabric receipt (metres)<input id="restock-quantity" type="number" min="1" max="10000" value="500"></label><button id="apply-restock">Receive fabric</button>';
-  if (selected.startsWith('CUSTOMER-') || selected === 'Manager') controls = '<button id="inspect-order">Place customer order</button>';
+  if (customerContext(selected) || selected === 'Manager') controls = '<button id="inspect-order">Place customer order</button>';
   if (selected === 'Monitor') controls = '<button data-action="road">' + (state.roadDelayed ? 'Restore road' : 'Disrupt road') + '</button>';
   if (selected === 'Calendar') controls = '<button data-view="calendar">Open all orders calendar</button>';
   const related = state.orders.find(o => o.id === selected);
   const truckJobs = state.deliveries.filter(d => d.truck === selected);
   const assignments = truckJobs.map(d => '<p>' + d.orderId + ' | dispatch ' + timeAt(d.start) + ' | arrive ' + timeAt(d.end) + ' | return ' + timeAt(d.returnEnd) + ' | ' + d.trips + ' trip(s)</p>').join('');
-  $('inspector').innerHTML = '<div class="agent-kind">' + escape(agent.role) + '</div><h3>' + escape(agent.name) + '</h3><p>' + escape(agent.status) + '</p><div class="agent-actions">' + controls + '<button id="full-profile">All agent details</button></div><dl><dt>Goal</dt><dd>' + escape(agent.goal) + '</dd><dt>Beliefs</dt><dd>' + escape(agent.beliefs) + '</dd><dt>Intentions</dt><dd>' + escape(agent.intentions) + '</dd><dt>Percepts / sensors</dt><dd>' + escape(agent.sensors) + '</dd><dt>Actions / actuators</dt><dd>' + escape(agent.actuators) + '</dd></dl>' + assignments + (related ? '<button data-conversation="' + related.id + '">View order messages</button>' : '') + (recent ? '<div class="latest-event"><strong>Latest decision</strong><p>' + escape(recent.detail) + '</p></div>' : '');
+  $('profile-controls').innerHTML = controls + assignments + (related ? '<button data-conversation="' + related.id + '">View order messages</button>' : '') + (recent ? '<div class="latest-event"><strong>Latest decision</strong><p>' + escape(recent.detail) + '</p></div>' : '');
 }
 
 function calendarEvents() {
@@ -571,26 +570,47 @@ function stopReplay() {
   $('map-replay').textContent = 'Watch agent communication';
 }
 function renderReplay() { renderMap(); renderMessages(); }
-function openOrder() {
+function customerContext(id) {
+  const visit = state.visits.find(visit => visit.id === id);
+  if (visit) return { name: visit.customer, destination: visit.destination };
+  const location = state.locations.find(location => 'CUSTOMER-' + location.id === id);
+  return location ? { name: location.name, destination: location.id } : null;
+}
+
+function openOrder(agentId) {
+  const customer = customerContext(agentId);
+  $('order-customer').value = customer?.name || '';
+  $('order-destination').value = customer?.destination || 'school';
+  $('order-title').textContent = customer ? 'New order for ' + customer.name : 'Place a customer order';
+  $('order-dialog').dataset.customerAgent = customer ? agentId : '';
+  $('customer-profile').hidden = !customer;
   $('order-deadline').value = Math.min(1000, state.time + 30);
   $('order-deadline').min = state.time + 3;
   $('order-error').hidden = true;
+  if ($('agent-dialog').open) $('agent-dialog').close();
   $('order-dialog').showModal();
+}
+
+function selectMapAgent(id) {
+  selected = id;
+  renderMap();
+  if (customerContext(id)) openOrder(id);
+  else openAgentProfile();
 }
 
 document.addEventListener('click', async event => {
   const button = event.target.closest('[data-action],[data-agent],[data-station],[data-truck],[data-order],[data-view],[data-scenario],[data-conversation]');
   if (!button) return;
-  if (button.dataset.view) setView(button.dataset.view);
+  if (button.dataset.view) { $('agent-dialog').close(); setView(button.dataset.view); }
   if (button.dataset.action) {
     if (button.dataset.action === 'reset') { stopReplay(); followLive = true; calendarDay = 0; }
     await action(button.dataset.action);
   }
-  if (button.dataset.agent) { selected = button.dataset.agent; renderMap(); renderInspector(); openAgentProfile(); }
+  if (button.dataset.agent) selectMapAgent(button.dataset.agent);
   if (button.dataset.station) await action('station', { id: button.dataset.station });
   if (button.dataset.truck) await action('truck', { id: button.dataset.truck });
-  if (button.dataset.order) { selected = button.dataset.order; filter = selected; renderMap(); renderInspector(); renderMessages(); }
-  if (button.dataset.conversation) { filter = button.dataset.conversation; setView('messages'); }
+  if (button.dataset.order) { selected = button.dataset.order; filter = selected; renderMap(); renderMessages(); openAgentProfile(); }
+  if (button.dataset.conversation) { filter = button.dataset.conversation; $('agent-dialog').close(); setView('messages'); }
   if (button.dataset.scenario) {
     stopReplay(); followLive = true; calendarDay = 0;
     await action('scenario', { name: button.dataset.scenario });
@@ -600,18 +620,22 @@ document.addEventListener('click', async event => {
 document.addEventListener('click', event => {
   if (event.target.id === 'apply-workers') action('workers', { count: Number($('worker-count').value) });
   if (event.target.id === 'apply-restock') action('restock', { quantity: Number($('restock-quantity').value) });
-  if (event.target.id === 'inspect-order') openOrder();
-  if (event.target.id === 'full-profile') openAgentProfile();
+  if (event.target.id === 'inspect-order') openOrder(selected);
 });
 document.addEventListener('keydown', event => {
   if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('[role=button]')) {
     event.preventDefault(); event.target.click();
   }
 });
-$('agent-select').onchange = event => { selected = event.target.value; renderMap(); renderInspector(); };
-$('new-order').onclick = openOrder;
+$('profile-agent-select').onchange = event => { selected = event.target.value; renderMap(); renderAgentProfile(); };
+$('new-order').onclick = () => openOrder();
 $('close-order').onclick = () => $('order-dialog').close();
 $('close-profile').onclick = () => $('agent-dialog').close();
+$('customer-profile').onclick = () => {
+  selected = $('order-dialog').dataset.customerAgent;
+  $('order-dialog').close();
+  openAgentProfile();
+};
 $('order-form').onsubmit = async event => {
   event.preventDefault();
   const data = new FormData(event.target);
@@ -802,6 +826,8 @@ function renderAgentProfile() {
   const agent = allAgents().find(item => item.id === selected);
   if (!agent) return;
   const { policy, percepts, peers, messages, current, location } = agentDetails(agent);
+  $('profile-agent-select').innerHTML = allAgents().map(item => '<option value="' + item.id + '"' + (selected === item.id ? ' selected' : '') + '>' + escape(item.name) + ' (' + item.id + ')</option>').join('');
+  renderAgentControls();
   const fields = rows => '<dl>' + rows.map(([name, value]) => '<dt>' + escape(name) + '</dt><dd>' + escape(value) + '</dd>').join('') + '</dl>';
   $('profile-title').textContent = agent.name + ' (' + agent.id + ')';
   const properties = [
