@@ -5,8 +5,10 @@ import { readFile } from 'node:fs/promises';
 import { Factory } from '../backend/engine.js';
 
 const html = await readFile(new URL('./index.html', import.meta.url), 'utf8');
-const script = (await readFile(new URL('./app.js', import.meta.url), 'utf8')).replace("import { routeMessage } from './routing.js';", '');
+const script = (await readFile(new URL('./app.js', import.meta.url), 'utf8')).replace(/^import .*;$/gm, '');
 const routing = (await readFile(new URL('./routing.js', import.meta.url), 'utf8')).replace('export function routeMessage', 'function routeMessage');
+
+const roads = (await readFile(new URL('./roads.js', import.meta.url), 'utf8')).replace(/export /g, '');
 
 // A DOM/canvas harness exercises rendering and queue timing without browser dependencies.
 function createUI() {
@@ -30,6 +32,7 @@ function createUI() {
       remove() { elements.delete(this.id); },
       showModal() { this.open = true; }, close() { this.open = false; },
       getBoundingClientRect() {
+        if (this.id === 'map-controls') return { width: 270, height: 78 };
         if (this.id === 'agent-popup') return { width: 248, height: 110 };
         if (this.id.startsWith('marker-')) return { width: 88, height: 91 };
         if (this.id.startsWith('node-')) return { width: 126, height: 128 };
@@ -63,6 +66,7 @@ function createUI() {
   };
   vm.createContext(sandbox);
   vm.runInContext(routing, sandbox);
+  vm.runInContext(roads, sandbox);
   vm.runInContext(script, sandbox);
   return {
     elements, strokes,
@@ -218,4 +222,29 @@ test('resource controls remain available in popup profiles after side panel remo
     assert.equal(ui.elements.get('agent-dialog').open,true);
     assert.ok(ui.elements.get('profile-controls').innerHTML.includes(control),agent+' lost its controls');
   }
+});
+
+test('rapid clock steps resume truck animation from its displayed road position', () => {
+  const ui=createUI();
+  const factory=new Factory();
+  const delivery=factory.deliveries[0];
+  while(factory.time<delivery.start) factory.step();
+  ui.state(factory);
+  ui.run('window.requestAnimationFrame = () => 1');
+  const marker=ui.elements.get('marker-'+delivery.truck);
+  const animations=[];
+  marker.animate=(frames)=>{
+    const animation={frames,currentTime:500,playState:'running',cancel(){this.playState='idle';}};
+    animations.push(animation);
+    return animation;
+  };
+  factory.step();
+  ui.state(factory);
+  factory.step();
+  ui.state(factory);
+  assert.equal(animations.length,2);
+  assert.equal(animations[0].playState,'idle');
+  const expected=ui.run('truckPositionAt('+JSON.stringify(delivery.truck)+',state.deliveries,state.locations,'+(delivery.start+.5)+',960,738)');
+  assert.ok(Math.abs(parseFloat(animations[1].frames[0].left)-expected.x)<.00001);
+  assert.ok(Math.abs(parseFloat(animations[1].frames[0].top)-expected.y)<.00001);
 });

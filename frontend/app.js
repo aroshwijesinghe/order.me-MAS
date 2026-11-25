@@ -1,4 +1,5 @@
 import { routeMessage } from './routing.js';
+import { roadPaths, truckPositionAt, truckMotionFrames } from './roads.js';
 
 let state;
 let selected = 'Manager';
@@ -12,6 +13,7 @@ let liveQueue = [];
 let lastMessageId = 0;
 let messageTimer;
 let communicationActive = false;
+const truckVisualStates = new Map();
 const $ = id => document.getElementById(id);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const artwork = {
@@ -57,6 +59,8 @@ function acceptState(snapshot) {
     followLive = true;
     replayIndex = 0;
     $('map-visitors').innerHTML = '';
+    for (const motion of truckVisualStates.values()) motion.animation?.cancel();
+    truckVisualStates.clear();
     clearTimeout(messageTimer);
     messageTimer = undefined;
     liveQueue = [];
@@ -207,6 +211,10 @@ function render() {
   $('date').textContent = dateAt(state.time) + ' (simulated)';
   $('status').textContent = state.running ? 'Simulation running' : 'Simulation paused';
   $('play').textContent = state.running ? 'Pause simulation' : 'Run simulation';
+  $('map-clock').textContent = 'Hour ' + String(state.time).padStart(2, '0');
+  $('map-run-status').textContent = state.running ? 'Running' : 'Paused';
+  $('map-play').textContent = state.running ? 'Pause' : 'Run';
+  $('map-play').setAttribute('aria-pressed', String(state.running));
   const delivered = state.orders.filter(o => o.status === 'Delivered').length;
   const onTime = state.orders.filter(o => deliveryFor(o)?.end <= o.deadline).length;
   const transit = state.orders.filter(o => o.status === 'In transit').length;
@@ -287,19 +295,31 @@ function agentPosition(id) {
 }
 
 function truckPosition(id) {
-  const base = { x: 74, y: id === 'TRUCK-1' ? 64 : 80 };
-  const delivery = state.deliveries.find(d => d.truck === id && d.start <= state.time && d.returnEnd > state.time);
-  if (!delivery) return base;
-  const destination = state.locations.find(l => l.id === delivery.destination);
-  const elapsed = state.time - delivery.start;
-  const leg = Math.floor(elapsed / delivery.travel);
-  const legProgress = (elapsed % delivery.travel) / delivery.travel;
-  const progress = leg % 2 === 0 ? legProgress : 1 - legProgress;
-  // Orthogonal route follows the depot road to the customer column.
-  const middle = 78;
-  if (progress < .35) return { x: base.x + (middle - base.x) * progress / .35, y: base.y };
-  if (progress < .7) return { x: middle, y: base.y + (destination.y - base.y) * (progress - .35) / .35 };
-  return { x: middle + (destination.x - middle) * (progress - .7) / .3, y: destination.y };
+  const map = $('factory-map').getBoundingClientRect();
+  return truckPositionAt(id,state.deliveries,state.locations,state.time,map.width,map.height);
+}
+
+function moveTruck(marker, id) {
+  const map = $('factory-map').getBoundingClientRect();
+  const position = truckPosition(id);
+  const previous = truckVisualStates.get(id);
+  let fromTime = previous?.time ?? state.time;
+  if (previous?.animation && previous.time > previous.fromTime) {
+    const progress = Math.max(0,Math.min(1,(previous.animation.currentTime || 0)/1000));
+    fromTime = previous.fromTime + (previous.time-previous.fromTime) * progress;
+  }
+  if (previous && previous.time !== state.time) previous.animation?.cancel();
+  marker.style.left = position.x + '%';
+  marker.style.top = position.y + '%';
+  if (previous?.time === state.time) return;
+  const motion = { time: state.time, fromTime, animation: null };
+  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  if (previous && state.time > fromTime && marker.animate && !reducedMotion) {
+    const frames = truckMotionFrames(id,state.deliveries,state.locations,fromTime,state.time,map.width,map.height);
+    motion.animation = marker.animate(frames,{ duration: 1000, easing: 'linear' });
+    if (!connectionFrame) connectionFrame = window.requestAnimationFrame(refreshMovingConnections);
+  }
+  truckVisualStates.set(id,motion);
 }
 
 function renderMap() {
@@ -320,7 +340,7 @@ function renderMap() {
     const orderAction = agent.id.startsWith('CUSTOMER-') ? '<small class="node-order-action">Place order</small>' : '';
     return '<button id="node-' + agent.id + '" class="map-node ' + (working ? 'working ' : '') + (paused ? 'paused ' : '') + (selected === agent.id ? 'selected ' : '') + (speaking ? 'speaking ' : '') + (receiving ? 'receiving' : '') + '" style="left:' + agent.x + '%;top:' + agent.y + '%" data-agent="' + agent.id + '" aria-label="' + escape(agent.name + ', ' + agent.status) + '">' + art(index) + '<strong>' + escape(agent.name) + '</strong><small>' + escape(working ? 'Working | ' + agent.status : agent.status) + '</small>' + orderAction + '</button>';
   }).join('');
-  // Keep marker elements so CSS can interpolate actual vehicle movement between steps.
+  // Retain each vehicle and animate through all road junctions crossed by the clock step.
   for (const truck of state.trucks) {
     let marker = document.getElementById('marker-' + truck.id);
     if (!marker) {
@@ -329,15 +349,13 @@ function renderMap() {
       marker.dataset.agent = truck.id;
       $('map-trucks').append(marker);
     }
-    const position = truckPosition(truck.id);
     const moving = state.deliveries.some(d => d.truck === truck.id && d.start <= state.time && d.returnEnd > state.time);
     const speaking = message && message.sender === truck.id;
     const receiving = message && message.receiver === truck.id;
     marker.className = 'truck-marker' + (!truck.available && !moving ? ' paused' : '') + (moving ? ' travelling' : '') + (speaking ? ' speaking' : '') + (receiving ? ' receiving' : '');
     const delivery = state.deliveries.find(d => d.truck === truck.id && d.start <= state.time && d.returnEnd > state.time);
     const returning = delivery && Math.floor((state.time - delivery.start) / delivery.travel) % 2 === 1;
-    marker.style.left = position.x + '%';
-    marker.style.top = position.y + '%';
+    moveTruck(marker,truck.id);
     marker.innerHTML = art(0, returning ? 'returning' : '') + '<strong>' + truck.id.replace('TRUCK-', 'Truck ') + '</strong><small>' + (moving ? returning ? 'Returning' : 'Delivering' : truck.available ? 'At depot' : 'Unavailable') + '</small>';
     marker.setAttribute('aria-label', truck.name + (moving ? ' travelling' : ' at depot'));
   }
@@ -371,13 +389,7 @@ function drawRoads() {
     points.forEach(([a, b], i) => i ? ctx.lineTo(x(a), y(b)) : ctx.moveTo(x(a), y(b)));
     ctx.stroke();
   }
-  const roads = [
-    [[4,94],[4,40],[13,23]],
-    [[13,23],[67,23]], [[13,49],[67,49]], [[13,75],[51,75]],
-    [[23,23],[23,75]], [[42,23],[42,75]], [[59,23],[59,92]],
-    [[67,49],[74,64],[78,64]], [[74,80],[78,80]], [[78,20],[78,79]],
-    ...state.locations.map(l => [[78,l.y],[l.x,l.y]])
-  ];
+  const roads = roadPaths(state.locations);
   for (const points of roads) {
     road(points, '#cbd4c8', 17);
     road(points, '#f4f6ef', 12);
@@ -432,6 +444,10 @@ function drawConnections(message) {
     const top = Number.isFinite(box.top) ? box.top - rect.top : parseFloat(popup.style.top);
     rectangles.push({ id: 'popup', left, top, right: left + box.width, bottom: top + box.height });
   }
+  const controls = $('map-controls').getBoundingClientRect();
+  const controlsLeft = Number.isFinite(controls.left) ? controls.left - rect.left : 12;
+  const controlsTop = Number.isFinite(controls.top) ? controls.top - rect.top : 12;
+  rectangles.push({ id: 'map-controls', left: controlsLeft, top: controlsTop, right: controlsLeft + controls.width, bottom: controlsTop + controls.height });
   const route = routeMessage(from, to, rectangles, rect.width, rect.height);
   if (route.length < 2) return;
   ctx.strokeStyle = communicationColor(message);
@@ -471,8 +487,16 @@ function renderPopup(message) {
   const actorY = actor.y / 100 * map.height;
   const left = Math.max(10, Math.min(map.width - bounds.width - 10, actorX - bounds.width / 2));
   let top = actorY - actor.height / 2 - bounds.height - 15;
-  const below = top < 12;
+  let below = top < 12;
   if (below) top = actorY + actor.height / 2 + 15;
+  const controls = $('map-controls').getBoundingClientRect();
+  const controlsLeft = Number.isFinite(controls.left) ? controls.left - map.left : 12;
+  const controlsTop = Number.isFinite(controls.top) ? controls.top - map.top : 12;
+  if (left < controlsLeft + controls.width && left + bounds.width > controlsLeft &&
+      top < controlsTop + controls.height && top + bounds.height > controlsTop) {
+    below = true;
+    top = actorY + actor.height / 2 + 15;
+  }
   popup.style.left = left + 'px';
   popup.style.top = Math.max(12, Math.min(map.height - bounds.height - 12, top)) + 'px';
   popup.style.setProperty('--tail-left', Math.max(18, Math.min(bounds.width - 18, actorX - left)) + 'px');
@@ -691,7 +715,8 @@ function refreshMovingConnections(timestamp) {
     drawConnections(message);
     lastConnectionFrame = timestamp;
   }
-  connectionFrame = movingEntities.size ? window.requestAnimationFrame(refreshMovingConnections) : undefined;
+  const trucksMoving = [...truckVisualStates.values()].some(motion => motion.animation?.playState === 'running');
+  connectionFrame = movingEntities.size || trucksMoving ? window.requestAnimationFrame(refreshMovingConnections) : undefined;
 }
 $('factory-map').addEventListener?.('transitionrun', event => {
   if (!['left','top'].includes(event.propertyName)) return;
@@ -703,7 +728,14 @@ for (const name of ['transitionend','transitioncancel']) {
     if (['left','top'].includes(event.propertyName)) movingEntities.delete(event.target);
   });
 }
-window.addEventListener('resize', () => { if (state) { drawRoads(); renderPopup(currentMapMessage()); drawConnections(currentMapMessage()); } });
+window.addEventListener('resize', () => {
+  if (!state) return;
+  for (const motion of truckVisualStates.values()) {
+    motion.animation?.cancel();
+    motion.animation = null;
+  }
+  renderMap();
+});
 const events = new EventSource('/events');
 events.onmessage = event => {
   acceptState(JSON.parse(event.data));
