@@ -267,7 +267,7 @@ export class Factory {
     const visit = { id: 'VISIT-' + (++this.visitSequence), customer: order.customer, destination: order.destination,
       start: arriveAt - 2, arriveAt, departAt: arriveAt + 1, end: arriveAt + 3, orderId: null, order, source };
     this.visits.push(visit);
-    this.message('CUSTOMER-' + order.destination, 'Manager', 'INFORM', order.customer + ' is visiting reception. Order submission at hour ' + arriveAt + '.');
+    this.message('CUSTOMER-' + order.destination, 'Manager', 'INFORM', order.customer + ' is visiting reception. Order submission at hour ' + arriveAt + '.', undefined, { visitId: visit.id });
     return visit;
   }
 
@@ -307,7 +307,7 @@ export class Factory {
     const products = {school:'School uniform batch',sports:'Sportswear batch',workwear:'Workwear batch'};
     this.queueCustomer({
       name: products[location.id], customer: location.name, destination: location.id,
-      quantity, priority, deadline: arrival + leadTime
+      quantity, priority, deadline: Math.ceil(arrival + leadTime)
     },'random');
     this.randomTraffic.generated++;
     this.randomTraffic.nextAt = this.time + 2 + this.randomNumber(5);
@@ -337,7 +337,12 @@ export class Factory {
     }
   }
 
-  step() {
+  step(hours = 1) {
+    if (![.25,1].includes(hours)) throw new Error('Step duration must be 0.25 or 1 hour');
+    for (let tick = 0; tick < hours * 4; tick++) this.advanceQuarterHour();
+  }
+
+  advanceQuarterHour() {
     this.announceDispatches();
     for (const booking of this.bookings.filter(b => b.stage === 'cutting' && b.start <= this.time && !this.materialConsumed.includes(b.orderId))) {
       const order = this.orders.find(o => o.id === booking.orderId);
@@ -345,7 +350,7 @@ export class Factory {
       this.materialConsumed.push(order.id);
       this.message('Stores', booking.station, 'INFORM', 'Issue ' + order.quantity + ' m fabric for cutting', order.id);
     }
-    this.time++;
+    this.time = Math.round((this.time + .25) * 4) / 4;
     if (this.randomTraffic.enabled && this.time >= this.randomTraffic.nextAt) this.generateRandomCustomer();
     for (const visit of this.visits) {
       if (!visit.orderId && visit.arriveAt <= this.time) {

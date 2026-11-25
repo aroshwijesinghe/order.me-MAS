@@ -235,3 +235,5 @@ input,select{display:block;width:100%;padding:10px;border:1px solid #c7d6cb;bord
 .planning-queue button { font-size: 12px; padding: 7px 10px; }
 .planning-queue .priority-3 { border-color: #c68b3e; background: #fff2d9; color: #8c581b; }
 .planning-queue .priority-2 { border-color: #8c83bc; background: #f0ebfa; color: #68538d; }
+
+.customer-marker.speaking { outline: 2px solid var(--communication-color); border-radius: 8px; background: #ffffffe6; }

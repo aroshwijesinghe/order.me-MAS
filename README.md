@@ -24,7 +24,7 @@ Open http://localhost:3001. Run the engine and resource regression checks with `
 
 ## Simulation walkthrough
 
-1. Open **Factory map**. The top-left corner shows elapsed simulation hours, **Auto run/Pause**, **Step mode**, **Next hour** and **Reset**. **Step mode** stops automatic time and message playback. Use **Next hour** to advance production manually and **Previous message / Next message** to inspect communication. **Auto run** resumes automatic progression. **Advance 1 hour** in the main toolbar also stops automatic running and performs one manual simulation step, letting you inspect production, visits and deliveries hour by hour. The full-width map uses larger labels. Click a customer building or visiting customer to open an order form prefilled with its name and delivery location. Click other buildings or trucks for their profiles and controls.
+1. Open **Factory map**. The top-left corner shows elapsed simulation hours, **Auto run/Pause**, **Step mode**, **Next step (+15 min)** and **Reset**. **Step mode** stops automatic time and message playback. Use **Next step (+15 min)** to advance production, customers and trucks by a quarter hour and **Previous message / Next message** to inspect communication. **Auto run** resumes automatic progression. **Advance 1 hour** in the main toolbar also stops automatic running and performs one manual simulation step, letting you inspect production, visits and deliveries hour by hour. The full-width map uses larger labels. Click a customer building or visiting customer to open an order form prefilled with its name and delivery location. Click other buildings or trucks for their profiles and controls.
 2. Click **Place customer order**. Enter the customer, garment, quantity, priority, delivery location and delivery deadline in simulation hours, then send the customer to reception. Advance time to watch arrival, order placement and departure. The request enters production planning at arrival.
 3. The manager requests a plan. Stores checks fabric, HR assigns workers, order agents solicit station offers, and the production manager commits a complete route.
 4. Logistics requests truck bids after the planned finishing time. Trucks consider capacity, travel time, multiple trips and return-to-depot commitments. The earliest final arrival is selected.
@@ -60,7 +60,7 @@ Click any map agent or visiting customer to open its complete profile. The side 
 - Customers occupy three fixed locations on a fictional campus map. Normal one-way journeys take two or three simulated hours. Road disruption doubles future journey times.
 - Deadlines refer to final delivery. Production schedules and truck schedules expose late plans. Finished goods wait if every truck is unavailable.
 - Replanning preserves operations and journeys whose start is earlier than the current simulation hour. Pausing a busy resource withdraws future capacity while its active work completes.
-- The clock starts at 08:00 on 25 November 2026 and advances continuously with no shift calendar. The displayed dates are fictional simulation dates. Each automatic tick advances one hour.
+- The clock starts at 08:00 on 25 November 2026. The engine processes 15-minute ticks with no shift calendar. The displayed dates are fictional simulation dates. Each automatic tick advances one hour.
 - Reset and server restart restore seeded data. State is shared across browser tabs and held in memory.
 
 ## MAS demonstrations and scope
@@ -129,10 +129,17 @@ Internal order agents run in the company's production-planning workspace and are
 
 ## Random customer traffic
 
-Enable **Random customer arrivals** above the live map, then use **Auto run** or **Next hour**. The **Random customer day** scenario also enables it after resetting the factory.
+Enable **Random customer arrivals** above the live map, then use **Auto run** or **Next step (+15 min)**. The **Random customer day** scenario also enables it after resetting the factory.
 
 A new visitor is generated every 2?6 simulation hours. Quantities range from 20?80 garments. Customer locations and Normal, High and Urgent priorities are sampled in shuffled groups of three so each group includes every customer location and priority. Delivery lead times vary with urgency. Every visitor walks to reception, submits through the operations manager and leaves. New orders trigger priority-based replanning while active operations complete.
 
 The live map shows the next arrival, generated visitor count and priority-sorted planning queue. Disable the checkbox to stop generating visitors. Existing visitors and orders finish through the normal resource constraints. Fabric shortages can be resolved in the Stores profile.
 
 Traffic uses a seeded pseudo-random generator for reproducible checks, with a fresh seed on each enable. The API accepts an optional integer seed on the `random-traffic` action. Reset disables traffic. Generation stops near the 1000-hour planning horizon.
+
+
+## Fine-grained Step mode
+
+**Next step (+15 min)** advances the clock by 0.25 hours. A two-hour outward trip takes eight clicks. **Advance 1 hour** remains available in the main toolbar, and automatic running still advances one hour per timer tick.
+
+Each manual step selects a newly recorded communication event when one occurs, then lets you inspect other events from that step. Empty steps clear a stale popup. **Previous message** and **Next message** inspect the full message history. Popup timestamps identify the event's recorded hour, and popups track the speaking agent as vehicles move.

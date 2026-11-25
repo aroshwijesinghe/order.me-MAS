@@ -10,6 +10,7 @@ let replayTimer;
 let followLive = true;
 let liveMessage;
 let liveQueue = [];
+let manualMessages = [];
 let lastMessageId = 0;
 let messageTimer;
 let communicationActive = false;
@@ -65,6 +66,7 @@ function acceptState(snapshot) {
     clearTimeout(messageTimer);
     messageTimer = undefined;
     liveQueue = [];
+    manualMessages = [];
     liveMessage = undefined;
     communicationActive = false;
     lastMessageId = 0;
@@ -114,6 +116,16 @@ function visualAgentId(id) {
   return id === 'Fleet' ? 'Logistics' : id;
 }
 
+function messageAgentId(id, message) {
+  if (id.startsWith('CUSTOMER-') && message) {
+    const visit = state.visits.find(visit => visit.phase !== 'Left' &&
+      'CUSTOMER-' + visit.destination === id &&
+      (visit.id === message.visitId || (message.orderId && visit.orderId === message.orderId)));
+    if (visit) return visit.id;
+  }
+  return visualAgentId(id);
+}
+
 function messageText(message) {
   const order = state.orders.find(order => order.id === message.orderId);
   const quantity = order?.quantity;
@@ -137,19 +149,33 @@ function freezeCommunication() {
   clearTimeout(messageTimer);
   messageTimer = undefined;
   replayIndex = Math.max(0,state.messages.findIndex(item => item.id === message?.id));
+  if (followLive) liveQueue = [];
   followLive = false;
   communicationActive = Boolean(message);
   renderReplay();
 }
 
+function showManualStepEvents(previousId) {
+  const fresh = state.messages.filter(message => message.id > previousId);
+  if (fresh.length) manualMessages = fresh;
+  const message = manualMessages.shift();
+  communicationActive = Boolean(message);
+  if (message) replayIndex = state.messages.findIndex(item => item.id === message.id);
+  followLive = false;
+  renderReplay();
+}
+
 async function action(type, extra = {}) {
-  if (type === 'pause' || type === 'step') freezeCommunication();
+  const stepping = type === 'step' || type === 'micro-step';
+  const previousId = state?.messages.at(-1)?.id || 0;
+  if (type === 'pause' || stepping) freezeCommunication();
   try {
     const response = await fetch('/api/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type, ...extra }) });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Action failed');
     $('error').hidden = true;
     acceptState(result);
+    if (stepping) showManualStepEvents(previousId);
     if (type === 'play') {
       if (state.running) {
         const lastShown = currentMessage()?.id || 0;
@@ -293,6 +319,7 @@ function renderVisitors() {
     }, 1100);
   }
   const speakingVisit = active.find(visit => visit.phase === 'Placing order');
+  const current = currentMapMessage();
   for (const visit of active) {
     let marker = document.getElementById('node-' + visit.id);
     if (!marker) {
@@ -303,7 +330,7 @@ function renderVisitors() {
       $('map-visitors').append(marker);
     }
     const position = customerPosition(visit);
-    marker.className = 'customer-marker ' + (visit.phase === 'Arriving' || visit.phase === 'Leaving' ? 'walking' : '') + (visit.phase === 'Leaving' ? ' leaving' : '');
+    marker.className = 'customer-marker ' + (current && messageAgentId(current.sender,current) === visit.id ? 'speaking ' : '') + (visit.phase === 'Arriving' || visit.phase === 'Leaving' ? 'walking' : '') + (visit.phase === 'Leaving' ? ' leaving' : '');
     marker.style.left = position.x + '%';
     marker.style.top = position.y + '%';
     marker.innerHTML = '<img src="/assets/customer-visitor.png" alt="" draggable="false"><strong>' + escape(visit.customer) + '</strong><small>' + escape(visit.phase) + '</small>' + (visit.id === speakingVisit?.id ? '<span class="visit-speech">Manager, please arrange ' + visit.order.quantity + ' garments.<br>Order ' + escape(visit.orderId) + ' submitted.</span>' : '');
@@ -353,15 +380,15 @@ function renderMap() {
   $('factory-map').style.setProperty('--communication-color', communicationColor(message));
   $('map-message-position').textContent = followLive
     ? 'Showing ' + timeAt(message?.time ?? state.time) + (liveQueue.length ? ' | ' + liveQueue.length + ' queued' : ' | latest event')
-    : 'Message ' + (replayIndex + 1) + ' / ' + state.messages.length;
+    : message ? 'Message ' + (replayIndex + 1) + ' / ' + state.messages.length : 'No communication at ' + timeAt(state.time);
   $('map-previous').disabled = !state.messages.length || (!followLive && replayIndex === 0);
   $('map-next').disabled = followLive || replayIndex >= state.messages.length - 1;
   const agents = allAgents().filter(a => a.x !== undefined && !a.id.startsWith('ORD'));
   $('map-nodes').innerHTML = agents.map(agent => {
     const working = state.bookings.some(b => b.station === agent.id && b.start <= state.time && b.end > state.time);
     const paused = agent.available === false || (agent.required && !agent.assigned);
-    const speaking = message && visualAgentId(message.sender) === agent.id;
-    const receiving = message && visualAgentId(message.receiver) === agent.id;
+    const speaking = message && messageAgentId(message.sender,message) === agent.id;
+    const receiving = message && messageAgentId(message.receiver,message) === agent.id;
     const index = artwork[agent.id] ?? 11;
     const orderAction = agent.id.startsWith('CUSTOMER-') ? '<small class="node-order-action">Place order</small>' : '';
     return '<button id="node-' + agent.id + '" class="map-node ' + (working ? 'working ' : '') + (paused ? 'paused ' : '') + (selected === agent.id ? 'selected ' : '') + (speaking ? 'speaking ' : '') + (receiving ? 'receiving' : '') + '" style="left:' + agent.x + '%;top:' + agent.y + '%" data-agent="' + agent.id + '" aria-label="' + escape(agent.name + ', ' + agent.status) + '">' + art(index) + '<strong>' + escape(agent.name) + '</strong><small>' + escape(working ? 'Working | ' + agent.status : agent.status) + '</small>' + orderAction + '</button>';
@@ -460,8 +487,8 @@ function drawConnections(message) {
     const top = Number.isFinite(actual?.top) ? actual.top - rect.top : bounds.y / 100 * rect.height - bounds.height / 2;
     rectangles.push({ id: agent.id, left, top, right: left + bounds.width, bottom: top + bounds.height });
   }
-  const from = rectangles.find(entity => entity.id === visualAgentId(message.sender));
-  const to = rectangles.find(entity => entity.id === visualAgentId(message.receiver));
+  const from = rectangles.find(entity => entity.id === messageAgentId(message.sender,message));
+  const to = rectangles.find(entity => entity.id === messageAgentId(message.receiver,message));
   if (!from || !to) return;
   const popup = $('agent-popup');
   if (!popup.hidden) {
@@ -503,11 +530,11 @@ function renderPopup(message) {
   const key = state.epoch + '-' + message.id;
   if (popup.dataset.message !== key) {
     popup.dataset.message = key;
-    popup.innerHTML = '<div class="popup-heading"><strong>' + escape(message.sender) + '</strong><span>' + escape(message.type) + '</span></div><small>To ' + escape(message.receiver) + (message.orderId ? ' | ' + escape(message.orderId) : '') + '</small><p>' + escape(messageText(message)) + '</p>' + (message.forwardedFrom ? '<small>Relayed by manager from ' + escape(message.forwardedFrom) + '</small>' : '');
+    popup.innerHTML = '<div class="popup-heading"><strong>' + escape(message.sender) + '</strong><span>' + escape(message.type) + '</span></div><small>Recorded ' + timeAt(message.time ?? state.time) + ' | To ' + escape(message.receiver) + (message.orderId ? ' | ' + escape(message.orderId) : '') + '</small><p>' + escape(messageText(message)) + '</p>' + (message.forwardedFrom ? '<small>Relayed by manager from ' + escape(message.forwardedFrom) + '</small>' : '');
   }
   const map = $('factory-map').getBoundingClientRect();
   if (!map.width) return;
-  const actor = mapBounds(message.sender);
+  const actor = mapBounds(messageAgentId(message.sender,message));
   const bounds = popup.getBoundingClientRect();
   const actorX = actor.x / 100 * map.width;
   const actorY = actor.y / 100 * map.height;
@@ -713,6 +740,8 @@ $('map-previous').onclick = previousMessage;
 function nextMessage() {
   stopReplay(); followLive = false; communicationActive = true;
   replayIndex = Math.min(state.messages.length - 1, replayIndex + 1);
+  liveQueue = liveQueue.filter(message => message.id > state.messages[replayIndex].id);
+  manualMessages = manualMessages.filter(message => message.id > state.messages[replayIndex].id);
   renderReplay();
 }
 $('event-next').onclick = nextMessage;
@@ -913,7 +942,7 @@ function renderAgentProfile() {
     ['Outcomes', state.randomTraffic.enabled || state.randomTraffic.generated ? 'Stochastic customer arrivals, deterministic processing' : 'Deterministic', state.randomTraffic.enabled || state.randomTraffic.generated ? 'Customer timing, quantities and priorities are sampled. Production and delivery follow fixed rules. A seed supports reproducible traffic.' : 'Given the same state and external actions, transitions repeat. Enable Random customer arrivals to sample incoming demand.'],
     ['Task dependence', 'Sequential', 'Reservations and earlier stages constrain later production and delivery decisions.'],
     ['Change over time', 'Dynamic during simulation', 'The clock and other agents change the world between decisions. A planning transaction uses a stable snapshot.'],
-    ['State and time', 'Discrete', 'The engine uses integer hours, garment counts and finite actions. Smooth map motion interpolates snapshots for display.'],
+    ['State and time', 'Discrete', 'The engine advances in discrete 15-minute ticks, with integer garment counts and finite actions. Smooth map motion interpolates snapshots for display.'],
     ['Transition knowledge', 'Known', 'Production durations, material use and journey rules are encoded in the simulator.'],
     ['Agent population', 'Multi-agent', 'Roles coordinate shared resources while order requests compete for capacity.']
   ];
