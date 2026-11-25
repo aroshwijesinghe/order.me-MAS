@@ -5,7 +5,8 @@ import { readFile } from 'node:fs/promises';
 import { Factory } from '../backend/engine.js';
 
 const html = await readFile(new URL('./index.html', import.meta.url), 'utf8');
-const script = await readFile(new URL('./app.js', import.meta.url), 'utf8');
+const script = (await readFile(new URL('./app.js', import.meta.url), 'utf8')).replace("import { routeMessage } from './routing.js';", '');
+const routing = (await readFile(new URL('./routing.js', import.meta.url), 'utf8')).replace('export function routeMessage', 'function routeMessage');
 
 // A DOM/canvas harness exercises rendering and queue timing without browser dependencies.
 function createUI() {
@@ -29,9 +30,9 @@ function createUI() {
       remove() { elements.delete(this.id); },
       showModal() { this.open = true; }, close() { this.open = false; },
       getBoundingClientRect() {
-        if (id === 'agent-popup') return { width: 248, height: 110 };
-        if (id.startsWith('marker-')) return { width: 88, height: 91 };
-        if (id.startsWith('node-')) return { width: 126, height: 128 };
+        if (this.id === 'agent-popup') return { width: 248, height: 110 };
+        if (this.id.startsWith('marker-')) return { width: 88, height: 91 };
+        if (this.id.startsWith('node-')) return { width: 126, height: 128 };
         return { width: 960, height: 738 };
       },
       getContext() { return context; },
@@ -61,6 +62,7 @@ function createUI() {
     Intl, Date, console
   };
   vm.createContext(sandbox);
+  vm.runInContext(routing, sandbox);
   vm.runInContext(script, sandbox);
   return {
     elements, strokes,
@@ -93,24 +95,24 @@ test('messages queue without duplication and resets replace old conversations', 
   assert.equal(ui.run('currentMessage().id'), factory.messages.at(-1).id);
 });
 
-test('sender popups escape content and red arrows terminate outside horizontal and vertical agent boxes', () => {
+test('sender popups escape content and active arrows use message colors outside agent boxes', () => {
   const ui = createUI();
   const factory = new Factory();
   ui.state(factory);
   ui.run("renderPopup({id:999,sender:'Manager',receiver:'HR',type:'INFORM',detail:'<img onerror=bad>'})");
   assert.match(ui.elements.get('agent-popup').innerHTML, /&lt;img onerror=bad&gt;/);
   assert.ok(!ui.elements.get('agent-popup').innerHTML.includes('<img'));
-  ui.elements.get('show-connections').checked = false;
+  ui.elements.get('agent-popup').hidden = true;
   ui.run('state.visits = []');
   ui.strokes.length = 0;
-  ui.run("drawConnections({sender:'HR',receiver:'Coordinator'})");
+  ui.run("drawConnections({sender:'HR',receiver:'Coordinator',type:'CFP'})");
   assert.equal(ui.strokes.length, 1);
-  assert.equal(ui.strokes[0].color, '#dc2626');
-  assert.ok(ui.strokes[0].origin.x > 960 * .13 + 63);
+  assert.equal(ui.strokes[0].color, '#2563eb');
+  assert.ok(ui.strokes[0].origin.x >= 960 * .13 + 63 || ui.strokes[0].origin.y <= 738 * .49 - 64 || ui.strokes[0].origin.y >= 738 * .49 + 64);
   ui.strokes.length = 0;
-  ui.run("drawConnections({sender:'Manager',receiver:'HR'})");
+  ui.run("drawConnections({sender:'Manager',receiver:'HR',type:'PROPOSE'})");
   assert.equal(ui.strokes.length, 1);
-  assert.ok(ui.strokes[0].origin.y > 738 * .23 + 64);
+  assert.equal(ui.strokes[0].color,'#7c3aed');
 });
 
 test('all scenarios render illustrated agents and trucks through final delivery', () => {
@@ -166,4 +168,19 @@ test('customer markers move to reception and disappear after leaving while their
   assert.equal(ui.elements.get('node-'+visit.id).style.top,'94%');
   assert.equal(ui.elements.get('node-'+visit.id).style.opacity,'0');
   assert.match(ui.elements.get('order-list').innerHTML,/Visitor garments/);
+});
+
+test('idle communications draw no connections and live queue expiry hides the map popup', () => {
+  const ui = createUI();
+  ui.state(new Factory());
+  ui.strokes.length=0;
+  ui.run('drawConnections()');
+  assert.equal(ui.strokes.length,0);
+  ui.run('followLatest()');
+  ui.tick();
+  assert.equal(ui.run('communicationActive'),false);
+  assert.equal(ui.elements.get('agent-popup').hidden,true);
+  ui.strokes.length=0;
+  ui.run('drawConnections(currentMapMessage())');
+  assert.equal(ui.strokes.length,0);
 });
