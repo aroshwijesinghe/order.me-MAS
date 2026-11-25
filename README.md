@@ -29,7 +29,7 @@ Open http://localhost:3001. Run the engine and resource regression checks with `
 3. The manager requests a plan. Stores checks fabric, HR assigns workers, order agents solicit station offers, and the production manager commits a complete route.
 4. Logistics requests truck bids after the planned finishing time. Trucks consider capacity, travel time, multiple trips and return-to-depot commitments. The earliest final arrival is selected.
 5. Watch illustrated trucks move between the depot and three fictional customer locations. Working production equipment animates, and paused resources appear desaturated. Order progress changes through cutting, sewing, finishing, dispatch and delivery.
-6. Messages appear in a readable queue with a speech bubble attached to the sender. Red arrows point to recipients. **Watch agent communication** replays all recorded messages. Use **Previous message** and **Next message** to inspect an exchange, or **Latest event** to skip queued messages. Every popup shows its recorded simulation hour. Message presentation and production time have separate controls. The **Red agent connections** checkbox controls the background relationship arrows.
+6. Messages appear in a readable queue with a speech bubble attached to the sender. Active messages use colored solid arrows that bend through clear space around agents, vehicles, visitors and the popup. **Watch agent communication** replays all recorded messages. Use **Previous message** and **Next message** to inspect an exchange, or **Latest event** to skip queued messages. Every popup shows its recorded simulation hour. Message presentation and production time have separate controls. Arrows appear during active communication and disappear when the live queue finishes. Request, offer, accepted, update and alert colors match the popup and agent highlights.
 7. Open **Order calendar** for daily production bookings, dispatches, arrivals and customer deadlines. The resource schedule includes truck return time. Select a booking to inspect its order.
 8. Open **Agent messages** for ACL-style fields, conversations and recorded decisions. Selecting an order makes its conversation filter available.
 9. Open **MAS demonstrations** for reproducible outage, worker absence, fabric shortage, fleet shortage, road disruption, urgent order and joining-agent scenarios. Each scenario resets the world.
@@ -106,3 +106,10 @@ Agent architecture labels are implementation-specific interpretations using the 
 The built-in ImageGen tool generated the additional visitor sprite at `frontend/assets/customer-visitor.png` with the following final prompt.
 
 > A single full-body customer visitor walking to a garment factory reception, isolated on actual transparent background. Friendly isometric 3D clay game asset matching a forest green and warm yellow factory simulation. One adult woman wearing forest green jacket, cream trousers and yellow shoulder bag, holding a small order clipboard. Three-quarter view facing right, casual walking pose, soft studio light, polished readable silhouette, entire person inside image with generous transparent margins. No text, no extra people, no floor, no scenery. Intended as a small animated character sprite.
+
+
+## Communication routing
+
+The map displays one active message connection at a time. Requests are blue, proposals purple, accepted work teal or green, informational updates cyan and exceptions amber. The popup, sender/receiver highlights and arrow share the message color. A gentle pulse respects reduced-motion settings.
+
+The router in `frontend/routing.js` uses measured entity bounds and padded horizontal/vertical corridors. It chooses free departure and arrival ports, bends around obstacles, and keeps the arrowhead outside the recipient. When a fully blocked layout has no clear path, the popup still presents the message. Inspecting a recorded message keeps its connection visible until playback resumes.

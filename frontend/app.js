@@ -1,3 +1,5 @@
+import { routeMessage } from './routing.js';
+
 let state;
 let selected = 'Manager';
 let filter = null;
@@ -9,21 +11,24 @@ let liveMessage;
 let liveQueue = [];
 let lastMessageId = 0;
 let messageTimer;
+let communicationActive = false;
 const $ = id => document.getElementById(id);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const artwork = {
   Manager: 1, HR: 2, Stores: 3, Coordinator: 4, Calendar: 5,
   Logistics: 6, Monitor: 7, CUT: 8, 'SEW-A': 9, 'SEW-B': 9, 'SEW-C': 9, FIN: 10
 };
-const connections = [
-  ['Manager','Coordinator'], ['HR','Coordinator'], ['Stores','CUT'],
-  ['Coordinator','CUT'], ['Coordinator','SEW-A'], ['Coordinator','SEW-B'],
-  ['CUT','SEW-A'], ['SEW-A','FIN'], ['SEW-B','FIN'],
-  ['FIN','Stores'], ['Stores','Logistics'], ['Logistics','TRUCK-1'],
-  ['Logistics','TRUCK-2'], ['Coordinator','Calendar'], ['Monitor','Logistics'],
-  ['CUSTOMER-school','Manager'], ['Calendar','CUSTOMER-school'],
-  ['Calendar','CUSTOMER-sports'], ['Calendar','CUSTOMER-workwear']
-];
+function communicationColor(message) {
+  const colors = {
+    REQUEST: '#2563eb', CFP: '#2563eb', PROPOSE: '#7c3aed',
+    ACCEPT: '#0f766e', RESERVE: '#0f766e', CONFIRM: '#15803d',
+    INFORM: '#0284c7', REGISTER: '#7c3aed', ALERT: '#b45309',
+    WAIT: '#b45309', REFUSE: '#a16207'
+  };
+  return colors[message?.type] || '#0284c7';
+}
+function currentMapMessage() { return communicationActive ? currentMessage() : undefined; }
+
 const scenarios = [
   ['visit', 'Customer reception visit', 'A customer arrives, submits an order and leaves. Advance simulation time to follow the visit.'],
   ['outage', 'Production line outage', 'Sewing A pauses. Orders negotiate with the remaining line.'],
@@ -56,6 +61,7 @@ function acceptState(snapshot) {
     messageTimer = undefined;
     liveQueue = [];
     liveMessage = undefined;
+    communicationActive = false;
     lastMessageId = 0;
   }
   state = snapshot;
@@ -69,8 +75,14 @@ function acceptState(snapshot) {
 function showNextLiveMessage() {
   clearTimeout(messageTimer);
   messageTimer = undefined;
-  if (!followLive || !liveQueue.length) return;
+  if (!followLive) return;
+  if (!liveQueue.length) {
+    communicationActive = false;
+    renderReplay();
+    return;
+  }
   liveMessage = liveQueue.shift();
+  communicationActive = true;
   renderReplay();
   messageTimer = setTimeout(showNextLiveMessage, 2600);
 }
@@ -82,7 +94,9 @@ function followLatest() {
   liveQueue = [];
   liveMessage = state.messages.at(-1);
   followLive = true;
+  communicationActive = true;
   renderReplay();
+  messageTimer = setTimeout(showNextLiveMessage, 2600);
 }
 
 function art(index, className = '') {
@@ -290,7 +304,8 @@ function truckPosition(id) {
 }
 
 function renderMap() {
-  const message = currentMessage();
+  const message = currentMapMessage();
+  $('factory-map').style.setProperty('--communication-color', communicationColor(message));
   $('map-message-position').textContent = followLive
     ? 'Showing ' + timeAt(message?.time ?? state.time) + (liveQueue.length ? ' | ' + liveQueue.length + ' queued' : ' | latest event')
     : 'Message ' + (replayIndex + 1) + ' / ' + state.messages.length;
@@ -331,8 +346,8 @@ function renderMap() {
   $('live-message').innerHTML = message ? '<span class="tag">' + escape(message.type) + '</span><strong>' + escape(message.sender) + ' &rarr; ' + escape(message.receiver) + ' | ' + timeAt(message.time) + '</strong><p>' + escape(message.detail) + '</p>' : 'Waiting for agent messages';
   renderVisitors();
   drawRoads();
-  drawConnections(message);
   renderPopup(message);
+  drawConnections(message);
 }
 
 function drawRoads() {
@@ -376,7 +391,10 @@ function mapBounds(id) {
   const position = agentPosition(id);
   const node = document.getElementById((state.trucks.some(t => t.id === id) ? 'marker-' : 'node-') + visualAgentId(id));
   const rect = node?.getBoundingClientRect();
-  return { ...position, width: rect?.width || 118, height: rect?.height || 118 };
+  const map = $('factory-map').getBoundingClientRect();
+  const x = Number.isFinite(rect?.left) && map.width ? (rect.left - map.left + rect.width / 2) / map.width * 100 : position.x;
+  const y = Number.isFinite(rect?.top) && map.height ? (rect.top - map.top + rect.height / 2) / map.height * 100 : position.y;
+  return { x, y, width: rect?.width || 118, height: rect?.height || 118 };
 }
 
 function drawConnections(message) {
@@ -386,49 +404,54 @@ function drawConnections(message) {
   const scale = window.devicePixelRatio || 1;
   canvas.width = Math.round(rect.width * scale);
   canvas.height = Math.round(rect.height * scale);
+  canvas.classList.toggle('communication-active', Boolean(message));
+  if (!message) return;
   const ctx = canvas.getContext('2d');
   ctx.scale(scale, scale);
-  function arrow(sender, receiver, active) {
-    const from = mapBounds(sender);
-    const to = mapBounds(receiver);
-    const a = { x: from.x / 100 * rect.width, y: from.y / 100 * rect.height };
-    const b = { x: to.x / 100 * rect.width, y: to.y / 100 * rect.height };
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    if (Math.hypot(dx, dy) < 2) return;
-    const startFactor = Math.min(dx ? (from.width / 2 + 6) / Math.abs(dx) : Infinity, dy ? (from.height / 2 + 6) / Math.abs(dy) : Infinity);
-    const endFactor = Math.min(dx ? (to.width / 2 + 9) / Math.abs(dx) : Infinity, dy ? (to.height / 2 + 9) / Math.abs(dy) : Infinity);
-    const start = { x: a.x + dx * startFactor, y: a.y + dy * startFactor };
-    const end = { x: b.x - dx * endFactor, y: b.y - dy * endFactor };
-    if (startFactor + endFactor >= 1) return;
-    ctx.strokeStyle = active ? '#dc2626' : 'rgba(190, 35, 35, .32)';
-    ctx.fillStyle = active ? '#dc2626' : 'rgba(190, 35, 35, .5)';
-    ctx.lineWidth = active ? 3 : 1.5;
-    ctx.lineCap = 'round';
-    ctx.setLineDash(active ? [] : [5, 5]);
-    ctx.beginPath();
-    ctx.moveTo(start.x, start.y);
-    ctx.lineTo(end.x, end.y);
-    ctx.stroke();
-    const angle = Math.atan2(dy, dx);
-    const size = active ? 12 : 8;
-    ctx.setLineDash([]);
-    ctx.beginPath();
-    ctx.moveTo(end.x, end.y);
-    ctx.lineTo(end.x - size * Math.cos(angle - .45), end.y - size * Math.sin(angle - .45));
-    ctx.lineTo(end.x - size * Math.cos(angle + .45), end.y - size * Math.sin(angle + .45));
-    ctx.closePath();
-    ctx.fill();
+  const rectangles = [];
+  const visible = [
+    ...allAgents().filter(agent => agent.x !== undefined),
+    ...state.trucks,
+    ...(state.visits || []).filter(visit => visit.phase !== 'Left')
+  ];
+  for (const agent of visible) {
+    const bounds = mapBounds(agent.id);
+    const element = document.getElementById((state.trucks.some(truck => truck.id === agent.id) ? 'marker-' : 'node-') + agent.id);
+    const actual = element?.getBoundingClientRect();
+    const left = Number.isFinite(actual?.left) ? actual.left - rect.left : bounds.x / 100 * rect.width - bounds.width / 2;
+    const top = Number.isFinite(actual?.top) ? actual.top - rect.top : bounds.y / 100 * rect.height - bounds.height / 2;
+    rectangles.push({ id: agent.id, left, top, right: left + bounds.width, bottom: top + bounds.height });
   }
-  if ($('show-connections').checked) {
-    for (const [sender, receiver] of connections) arrow(sender, receiver, false);
-    if (state.stations.some(s => s.id === 'SEW-C')) {
-      arrow('Coordinator', 'SEW-C', false);
-      arrow('SEW-C', 'FIN', false);
-    }
+  const from = rectangles.find(entity => entity.id === visualAgentId(message.sender));
+  const to = rectangles.find(entity => entity.id === visualAgentId(message.receiver));
+  if (!from || !to) return;
+  const popup = $('agent-popup');
+  if (!popup.hidden) {
+    const box = popup.getBoundingClientRect();
+    const left = Number.isFinite(box.left) ? box.left - rect.left : parseFloat(popup.style.left);
+    const top = Number.isFinite(box.top) ? box.top - rect.top : parseFloat(popup.style.top);
+    rectangles.push({ id: 'popup', left, top, right: left + box.width, bottom: top + box.height });
   }
-  for (const visit of (state.visits || []).filter(visit => visit.phase === 'Placing order')) arrow(visit.id, 'Manager', true);
-  if (message) arrow(message.sender, message.receiver, true);
+  const route = routeMessage(from, to, rectangles, rect.width, rect.height);
+  if (route.length < 2) return;
+  ctx.strokeStyle = communicationColor(message);
+  ctx.fillStyle = communicationColor(message);
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  route.forEach((point, index) => index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y));
+  ctx.stroke();
+  const end = route.at(-1);
+  const previous = route.at(-2);
+  const angle = Math.atan2(end.y - previous.y, end.x - previous.x);
+  ctx.beginPath();
+  ctx.moveTo(end.x, end.y);
+  ctx.lineTo(end.x - 11 * Math.cos(angle - .45), end.y - 11 * Math.sin(angle - .45));
+  ctx.lineTo(end.x - 11 * Math.cos(angle + .45), end.y - 11 * Math.sin(angle + .45));
+  ctx.closePath();
+  ctx.fill();
 }
 
 function renderPopup(message) {
@@ -605,12 +628,13 @@ function previousMessage() {
   stopReplay();
   replayIndex = Math.max(0, (followLive ? Math.max(0, state.messages.findIndex(m => m.id === currentMessage()?.id)) : replayIndex) - 1);
   followLive = false;
+  communicationActive = true;
   renderReplay();
 }
 $('event-back').onclick = previousMessage;
 $('map-previous').onclick = previousMessage;
 function nextMessage() {
-  stopReplay(); followLive = false;
+  stopReplay(); followLive = false; communicationActive = true;
   replayIndex = Math.min(state.messages.length - 1, replayIndex + 1);
   renderReplay();
 }
@@ -619,7 +643,7 @@ $('map-next').onclick = nextMessage;
 $('follow-live').onclick = followLatest;
 function toggleReplay() {
   if (replayTimer) { stopReplay(); return; }
-  followLive = false; replayIndex = 0; renderReplay();
+  followLive = false; communicationActive = true; replayIndex = 0; renderReplay();
   $('replay').textContent = 'Pause replay';
   $('map-replay').textContent = 'Pause communication replay';
   replayTimer = setInterval(() => {
@@ -631,8 +655,31 @@ $('replay').onclick = toggleReplay;
 $('map-replay').onclick = toggleReplay;
 $('map-live').onclick = followLatest;
 $('scenario-list').innerHTML = scenarios.map(([id, name, detail]) => '<button data-scenario="' + id + '"><strong>' + name + '</strong><small>' + detail + '</small></button>').join('');
-$('show-connections').onchange = () => drawConnections(currentMessage());
-window.addEventListener('resize', () => { if (state) { drawRoads(); drawConnections(currentMessage()); renderPopup(currentMessage()); } });
+// Re-route against actual vehicle and visitor bounds during CSS movement.
+const movingEntities = new Set();
+let connectionFrame;
+let lastConnectionFrame = 0;
+function refreshMovingConnections(timestamp) {
+  for (const entity of movingEntities) if (!entity.isConnected) movingEntities.delete(entity);
+  if (timestamp - lastConnectionFrame > 80) {
+    const message = currentMapMessage();
+    renderPopup(message);
+    drawConnections(message);
+    lastConnectionFrame = timestamp;
+  }
+  connectionFrame = movingEntities.size ? window.requestAnimationFrame(refreshMovingConnections) : undefined;
+}
+$('factory-map').addEventListener?.('transitionrun', event => {
+  if (!['left','top'].includes(event.propertyName)) return;
+  movingEntities.add(event.target);
+  if (!connectionFrame) connectionFrame = window.requestAnimationFrame(refreshMovingConnections);
+});
+for (const name of ['transitionend','transitioncancel']) {
+  $('factory-map').addEventListener?.(name, event => {
+    if (['left','top'].includes(event.propertyName)) movingEntities.delete(event.target);
+  });
+}
+window.addEventListener('resize', () => { if (state) { drawRoads(); renderPopup(currentMapMessage()); drawConnections(currentMapMessage()); } });
 const events = new EventSource('/events');
 events.onmessage = event => {
   acceptState(JSON.parse(event.data));

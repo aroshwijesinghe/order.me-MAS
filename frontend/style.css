@@ -48,8 +48,8 @@ input,select{display:block;width:100%;padding:10px;border:1px solid #c7d6cb;bord
   background-size: 400% 300%;
   filter: drop-shadow(0 3px 2px #28503b18);
 }
-.map-node.speaking { border-color: #dc2626; box-shadow: 0 0 0 4px #dc26261f; }
-.map-node.receiving { border-color: #dc2626; }
+.map-node.speaking { border-color: var(--communication-color, #0284c7); box-shadow: 0 0 0 4px color-mix(in srgb, var(--communication-color) 16%, transparent); }
+.map-node.receiving { border-color: var(--communication-color, #0284c7); }
 .map-node.working .network-art { animation: equipment-work 1.8s ease-in-out infinite; }
 .map-node.paused .network-art { filter: grayscale(.7); opacity: .65; }
 .truck-marker {
@@ -68,14 +68,14 @@ input,select{display:block;width:100%;padding:10px;border:1px solid #c7d6cb;bord
 .truck-marker .returning { transform: scaleX(-1); }
 .truck-marker.travelling .network-art { animation: truck-drive .45s ease-in-out infinite alternate; }
 .truck-marker.travelling .returning { animation: truck-return .45s ease-in-out infinite alternate; }
-.truck-marker.speaking, .truck-marker.receiving { border-color: #dc2626; box-shadow: 0 0 0 3px #dc262620; }
+.truck-marker.speaking, .truck-marker.receiving { border-color: var(--communication-color, #0284c7); box-shadow: 0 0 0 3px color-mix(in srgb, var(--communication-color) 16%, transparent); }
 .agent-popup {
   position: absolute;
   width: 248px;
   max-width: calc(100% - 24px);
   padding: 12px 14px;
   background: #fff;
-  border: 2px solid #dc2626;
+  border: 2px solid var(--communication-color, #0284c7);
   border-radius: 12px;
   box-shadow: 0 8px 28px #2944362b;
   pointer-events: none;
@@ -89,18 +89,16 @@ input,select{display:block;width:100%;padding:10px;border:1px solid #c7d6cb;bord
   left: var(--tail-left, 50%);
   bottom: -8px;
   transform: translateX(-50%) rotate(45deg);
-  border-right: 2px solid #dc2626;
-  border-bottom: 2px solid #dc2626;
+  border-right: 2px solid var(--communication-color, #0284c7);
+  border-bottom: 2px solid var(--communication-color, #0284c7);
   background: white;
 }
 .agent-popup.below::after { top: -8px; bottom: auto; transform: translateX(-50%) rotate(225deg); }
 .popup-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .popup-heading strong { font-size: 13px; }
-.popup-heading span { color: #b91c1c; font-size: 10px; font-weight: 700; }
+.popup-heading span { color: var(--communication-color, #0284c7); font-size: 10px; font-weight: 700; }
 .agent-popup small { display: block; color: #6d7f72; margin-top: 4px; font-size: 11px; }
 .agent-popup p { margin: 8px 0 0; font-size: 13px; line-height: 1.45; color: #2e4d3c; }
-.connection-control { display: flex; gap: 6px; align-items: center; }
-.connection-control input { margin: 0; }
 @keyframes equipment-work { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
 @keyframes truck-drive { from { transform: translateY(0); } to { transform: translateY(-1.5px); } }
 @keyframes truck-return { from { transform: scaleX(-1) translateY(0); } to { transform: scaleX(-1) translateY(-1.5px); } }
@@ -132,7 +130,7 @@ input,select{display:block;width:100%;padding:10px;border:1px solid #c7d6cb;bord
 .customer-marker.walking img { animation: customer-walk .5s ease-in-out infinite alternate; }
 .customer-marker.leaving img { transform: scaleX(-1); animation-name: customer-walk-return; }
 .gate-label { position: absolute; bottom: 1%; left: 2%; color: #58705d; font-size: 10px; }
-.visit-speech { position: absolute; top: -50px; left: 48px; width: 155px; padding: 8px; border: 1px solid #dc2626; border-radius: 8px; background: #fff; font-size: 10px; text-align: left; box-shadow: 0 3px 12px #334b3022; }
+.visit-speech { position: absolute; top: -50px; left: 48px; width: 155px; padding: 8px; border: 1px solid var(--communication-color, #0284c7); border-radius: 8px; background: #fff; font-size: 10px; text-align: left; box-shadow: 0 3px 12px #334b3022; }
 #visit-status { padding: 16px 22px; background: #edf3e8; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 #visit-status > strong { font-size: 13px; width: 100%; }
 #visit-status button { font-size: 12px; padding: 7px 10px; }
@@ -164,3 +162,9 @@ input,select{display:block;width:100%;padding:10px;border:1px solid #c7d6cb;bord
 .customer-marker img { height: 56px; width: 38px; }
 .customer-marker strong { font-size: 8px; }
 .customer-marker small { font-size: 8px; }
+
+.message-color-key { display: inline-flex; align-items: center; gap: 5px; }
+.message-color-key i { width: 8px; height: 8px; border-radius: 50%; }
+#connections.communication-active { animation: communication-pulse 1.3s ease-in-out infinite; }
+@keyframes communication-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .65; } }
+@media(prefers-reduced-motion: reduce) { #connections.communication-active { animation: none; } }
