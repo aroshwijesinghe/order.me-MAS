@@ -1,4 +1,4 @@
-﻿# Order.me
+# Order.me
 
 A garment factory network simulation with customer, order, management, HR, inventory, production, calendar, monitoring and delivery agents.
 
@@ -28,8 +28,8 @@ Open http://localhost:3001. Run the engine and resource regression checks with `
 2. Click **Place customer order**. Enter the customer, garment, quantity, priority, delivery location and delivery deadline in simulation hours.
 3. The manager requests a plan. Stores checks fabric, HR assigns workers, order agents solicit station offers, and the production manager commits a complete route.
 4. Logistics requests truck bids after the planned finishing time. Trucks consider capacity, travel time, multiple trips and return-to-depot commitments. The earliest final arrival is selected.
-5. Watch trucks move between the depot and three fictional customer locations. Order progress changes through cutting, sewing, finishing, dispatch and delivery.
-6. Click **Watch agent communication** on the map to replay recorded messages and highlight sender/receiver connections. **Follow live** returns to current events. Message replay and production time have separate controls.
+5. Watch illustrated trucks move between the depot and three fictional customer locations. Working production equipment animates, and paused resources appear desaturated. Order progress changes through cutting, sewing, finishing, dispatch and delivery.
+6. Messages appear in a readable queue with a speech bubble attached to the sender. Red arrows point to recipients. **Watch agent communication** replays all recorded messages. Use **Previous message** and **Next message** to inspect an exchange, or **Latest event** to skip queued messages. Every popup shows its recorded simulation hour. Message presentation and production time have separate controls. The **Red agent connections** checkbox controls the background relationship arrows.
 7. Open **Order calendar** for daily production bookings, dispatches, arrivals and customer deadlines. The resource schedule includes truck return time. Select a booking to inspect its order.
 8. Open **Agent messages** for ACL-style fields, conversations and recorded decisions. Selecting an order makes its conversation filter available.
 9. Open **MAS demonstrations** for reproducible outage, worker absence, fabric shortage, fleet shortage, road disruption, urgent order and joining-agent scenarios. Each scenario resets the world.
@@ -82,3 +82,12 @@ The friend's blood-network plan informed the MAS demonstrations. Coverage agains
 ## Git workflow
 
 Implement changes on the persistent `dev` branch. After each completed implementation, run relevant checks, commit with a human-readable message and push `dev`. After a major verified implementation, merge `dev` into `main` with a merge commit and push `main`. Continue subsequent work on `dev`.
+
+
+## Generated artwork
+
+The built-in ImageGen tool generated the local transparent illustration atlas at `frontend/assets/network-atlas.png`. The twelve sprites cover delivery trucks, operations management, HR, stores, production management, calendar, depot, monitor, cutting, sewing, quality inspection and customers. CSS selects cells from the shared image. Production motion and truck travel use CSS animations with reduced-motion support.
+
+The final image-generation prompt was
+
+> Create ONE production-ready UI sprite atlas image for a garment factory multi-agent simulation. Landscape canvas with EXACTLY 4 columns and 3 rows of equal rectangular cells. Each cell contains ONE separate centered small isometric 3D clay illustration, consistent perspective, soft studio lighting, forest green/teal with warm yellow accents, readable at 70px size. Generous transparent padding in every cell, no overlap, no text, no letters, no numbers, no border, no background scenery, actual transparent background. Cell order row 1 left to right: (1) delivery box truck facing right, large wheels, white cargo box and green cab, (2) operations manager person at office desk, (3) human resources team of three people, (4) warehouse full of fabric rolls and cardboard boxes. Row 2 left to right: (5) production manager person holding a clipboard standing beside a small factory, (6) upright calendar planner with small colored squares and a clock, (7) shipping depot building with loading dock and parcels, (8) monitoring computer with radar display and amber warning light. Row 3 left to right: (9) fabric cutting table with cloth and scissors, (10) industrial sewing machine with fabric, (11) quality inspection table with folded shirt and magnifying glass, (12) customer retail building with clothing shop window and a person. Keep all 12 subjects fully inside their cells and of similar visual scale. A polished coherent game asset sprite atlas, crisp silhouettes, no captions.

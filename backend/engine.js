@@ -8,6 +8,7 @@ export class Factory {
   constructor() { this.reset(); }
 
   reset() {
+    this.epoch = (this.epoch || 0) + 1;
     this.time = 0;
     this.running = false;
     this.round = 0;
@@ -283,7 +284,7 @@ export class Factory {
   state() {
     const reserved = this.orders.filter(o => !this.materialConsumed.includes(o.id) && this.bookings.some(b => b.orderId === o.id && b.stage === 'cutting')).reduce((sum, o) => sum + o.quantity, 0);
     return {
-      round: this.round, time: this.time, running: this.running,
+      epoch: this.epoch, round: this.round, time: this.time, running: this.running,
       orders: this.orders.map(o => ({ ...o, status: this.orderStatus(o) })),
       stations: this.stations, trucks: this.trucks, deliveries: this.deliveries,
       stock: this.stock, reserved, workers: this.workers, roadDelayed: this.roadDelayed,

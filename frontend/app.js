@@ -5,9 +5,25 @@ let calendarDay = 0;
 let replayIndex = 0;
 let replayTimer;
 let followLive = true;
+let liveMessage;
+let liveQueue = [];
+let lastMessageId = 0;
+let messageTimer;
 const $ = id => document.getElementById(id);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const icons = { Manager: 'M', Coordinator: 'C', HR: 'HR', Stores: 'S', Calendar: '31', Logistics: 'L', Monitor: '!', CUT: 'Cut', 'SEW-A': 'A', 'SEW-B': 'B', 'SEW-C': 'C', FIN: 'QC' };
+const artwork = {
+  Manager: 1, HR: 2, Stores: 3, Coordinator: 4, Calendar: 5,
+  Logistics: 6, Monitor: 7, CUT: 8, 'SEW-A': 9, 'SEW-B': 9, 'SEW-C': 9, FIN: 10
+};
+const connections = [
+  ['Manager','Coordinator'], ['HR','Coordinator'], ['Stores','CUT'],
+  ['Coordinator','CUT'], ['Coordinator','SEW-A'], ['Coordinator','SEW-B'],
+  ['CUT','SEW-A'], ['SEW-A','FIN'], ['SEW-B','FIN'],
+  ['FIN','Stores'], ['Stores','Logistics'], ['Logistics','TRUCK-1'],
+  ['Logistics','TRUCK-2'], ['Coordinator','Calendar'], ['Monitor','Logistics'],
+  ['CUSTOMER-school','Manager'], ['Calendar','CUSTOMER-school'],
+  ['Calendar','CUSTOMER-sports'], ['Calendar','CUSTOMER-workwear']
+];
 const scenarios = [
   ['outage', 'Production line outage', 'Sewing A pauses. Orders negotiate with the remaining line.'],
   ['staff', 'Worker absence', 'HR has six workers. Reduced staffing slows future production.'],
@@ -26,7 +42,73 @@ function dateAt(hour) {
 function timeAt(hour) { return 'H' + String(hour).padStart(2, '0'); }
 function productionEnd(order) { return state.bookings.find(b => b.orderId === order.id && b.stage === 'finishing')?.end; }
 function deliveryFor(order) { return state.deliveries.find(d => d.orderId === order.id); }
-function currentMessage() { return followLive ? state.messages.at(-1) : state.messages[replayIndex]; }
+function currentMessage() { return followLive ? liveMessage || state.messages.at(-1) : state.messages[replayIndex]; }
+
+function acceptState(snapshot) {
+  const reset = !state || snapshot.epoch !== state.epoch || snapshot.time < state.time || snapshot.round < state.round || (snapshot.messages.at(-1)?.id || 0) < lastMessageId;
+  if (reset) {
+    stopReplay();
+    followLive = true;
+    replayIndex = 0;
+    clearTimeout(messageTimer);
+    messageTimer = undefined;
+    liveQueue = [];
+    liveMessage = undefined;
+    lastMessageId = 0;
+  }
+  state = snapshot;
+  const fresh = state.messages.filter(message => message.id > lastMessageId);
+  liveQueue.push(...fresh);
+  lastMessageId = state.messages.at(-1)?.id || 0;
+  if (!messageTimer && followLive) showNextLiveMessage();
+  render();
+}
+
+function showNextLiveMessage() {
+  clearTimeout(messageTimer);
+  messageTimer = undefined;
+  if (!followLive || !liveQueue.length) return;
+  liveMessage = liveQueue.shift();
+  renderReplay();
+  messageTimer = setTimeout(showNextLiveMessage, 2600);
+}
+
+function followLatest() {
+  stopReplay();
+  clearTimeout(messageTimer);
+  messageTimer = undefined;
+  liveQueue = [];
+  liveMessage = state.messages.at(-1);
+  followLive = true;
+  renderReplay();
+}
+
+function art(index, className = '') {
+  return '<span class="network-art ' + className + '" style="background-position:' + (index % 4 * 100 / 3) + '% ' + (Math.floor(index / 4) * 50) + '%" aria-hidden="true"></span>';
+}
+
+function visualAgentId(id) {
+  const order = state.orders.find(order => order.id === id);
+  if (order) return 'CUSTOMER-' + order.destination;
+  return id === 'Fleet' ? 'Logistics' : id;
+}
+
+function messageText(message) {
+  const order = state.orders.find(order => order.id === message.orderId);
+  const quantity = order?.quantity;
+  if (message.type === 'CFP') return message.sender === 'Logistics'
+    ? 'Who can deliver ' + quantity + ' garments to ' + order.customer + '?'
+    : 'Can you handle ' + quantity + ' garments for this order?';
+  if (message.type === 'PROPOSE') return message.sender.startsWith('TRUCK')
+    ? 'I can make this delivery. ' + message.detail
+    : 'I have a free production slot. ' + message.detail;
+  if (message.type === 'ACCEPT') return 'Your offer is selected. ' + message.detail;
+  if (message.type === 'RESERVE') return 'Fabric is set aside for your order.';
+  if (message.type === 'REFUSE') return 'I cannot take this job. ' + message.detail;
+  if (message.type === 'WAIT') return 'This order needs to wait. ' + message.detail;
+  if (message.type === 'REGISTER') return 'I have joined the factory and can take work.';
+  return message.detail;
+}
 
 async function action(type, extra = {}) {
   try {
@@ -34,8 +116,7 @@ async function action(type, extra = {}) {
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Action failed');
     $('error').hidden = true;
-    state = result;
-    render();
+    acceptState(result);
     return true;
   } catch (error) {
     $('error').textContent = error.message;
@@ -58,7 +139,7 @@ function coreAgents() {
     { id: 'Coordinator', name: 'Production manager', role: 'Coordination agent', x: 34, y: 49, status: 'Plan round ' + state.round, goal: 'Allocate feasible production routes by order priority', beliefs: 'Station offers, stage dependencies and occupied time slots', intentions: 'Commit the earliest finishing complete route without overlaps', sensors: 'Capacity proposals and resource alerts', actuators: 'Accepted reservations and replanning' },
     { id: 'Calendar', name: 'Order calendar', role: 'Calendar agent', x: 34, y: 75, status: state.orders.length + ' orders tracked', goal: 'Publish production and delivery commitments', beliefs: 'Production reservations and confirmed truck arrivals', intentions: 'Tell customers their revised arrival time', sensors: 'Committed routes and delivery bids', actuators: 'Calendar entries and customer confirmations' },
     { id: 'Logistics', name: 'Dispatch depot', role: 'Logistics agent', x: 67, y: 49, status: state.trucks.filter(t => t.available).length + ' trucks available', goal: 'Deliver finished garments with available trucks', beliefs: 'Truck capacities, return times and road travel times', intentions: 'Compare bids and accept the earliest final delivery', sensors: 'Production completion times and truck offers', actuators: 'Dispatch reservations and delivery assignments' },
-    { id: 'Monitor', name: 'Network monitor', role: 'Monitoring agent', x: 67, y: 87, status: state.roadDelayed ? 'Road delay active' : 'Roads normal', goal: 'Report changes in the operating environment', beliefs: 'Station availability and road condition', intentions: 'Notify managers when future plans need revision', sensors: 'Disruption controls', actuators: 'Alerts that trigger replanning' }
+    { id: 'Monitor', name: 'Network monitor', role: 'Monitoring agent', x: 51, y: 92, status: state.roadDelayed ? 'Road delay active' : 'Roads normal', goal: 'Report changes in the operating environment', beliefs: 'Station availability and road condition', intentions: 'Notify managers when future plans need revision', sensors: 'Disruption controls', actuators: 'Alerts that trigger replanning' }
   ];
 }
 
@@ -123,15 +204,13 @@ function render() {
 }
 
 function agentPosition(id) {
-  if (id === 'Fleet') id = 'Logistics';
-  const order = state.orders.find(o => o.id === id);
-  if (order) id = 'CUSTOMER-' + order.destination;
+  id = visualAgentId(id);
   if (state.trucks.some(t => t.id === id)) return truckPosition(id);
   return allAgents().find(a => a.id === id) || { x: 34, y: 49 };
 }
 
 function truckPosition(id) {
-  const base = { x: 67, y: id === 'TRUCK-1' ? 62 : 69 };
+  const base = { x: 74, y: id === 'TRUCK-1' ? 64 : 80 };
   const delivery = state.deliveries.find(d => d.truck === id && d.start <= state.time && d.returnEnd > state.time);
   if (!delivery) return base;
   const destination = state.locations.find(l => l.id === delivery.destination);
@@ -148,14 +227,19 @@ function truckPosition(id) {
 
 function renderMap() {
   const message = currentMessage();
-  $('map-message-position').textContent = followLive ? 'Live events' : 'Message ' + (replayIndex + 1) + ' / ' + state.messages.length;
+  $('map-message-position').textContent = followLive
+    ? 'Showing ' + timeAt(message?.time ?? state.time) + (liveQueue.length ? ' | ' + liveQueue.length + ' queued' : ' | latest event')
+    : 'Message ' + (replayIndex + 1) + ' / ' + state.messages.length;
+  $('map-previous').disabled = !state.messages.length || (!followLive && replayIndex === 0);
+  $('map-next').disabled = followLive || replayIndex >= state.messages.length - 1;
   const agents = allAgents().filter(a => a.x !== undefined && !a.id.startsWith('ORD'));
   $('map-nodes').innerHTML = agents.map(agent => {
     const working = state.bookings.some(b => b.station === agent.id && b.start <= state.time && b.end > state.time);
     const paused = agent.available === false || (agent.required && !agent.assigned);
-    const speaking = message && (message.sender === agent.id || message.receiver === agent.id);
-    const icon = icons[agent.id] || 'C';
-    return '<button class="map-node ' + (working ? 'working ' : '') + (paused ? 'paused ' : '') + (selected === agent.id ? 'selected ' : '') + (speaking ? 'speaking' : '') + '" style="left:' + agent.x + '%;top:' + agent.y + '%" data-agent="' + agent.id + '" aria-label="' + escape(agent.name + ', ' + agent.status) + '"><span class="node-icon">' + icon + '</span><strong>' + escape(agent.name) + '</strong><small>' + escape(working ? 'Working | ' + agent.status : agent.status) + '</small></button>';
+    const speaking = message && visualAgentId(message.sender) === agent.id;
+    const receiving = message && visualAgentId(message.receiver) === agent.id;
+    const index = artwork[agent.id] ?? 11;
+    return '<button id="node-' + agent.id + '" class="map-node ' + (working ? 'working ' : '') + (paused ? 'paused ' : '') + (selected === agent.id ? 'selected ' : '') + (speaking ? 'speaking ' : '') + (receiving ? 'receiving' : '') + '" style="left:' + agent.x + '%;top:' + agent.y + '%" data-agent="' + agent.id + '" aria-label="' + escape(agent.name + ', ' + agent.status) + '">' + art(index) + '<strong>' + escape(agent.name) + '</strong><small>' + escape(working ? 'Working | ' + agent.status : agent.status) + '</small></button>';
   }).join('');
   // Keep marker elements so CSS can interpolate actual vehicle movement between steps.
   for (const truck of state.trucks) {
@@ -168,19 +252,25 @@ function renderMap() {
     }
     const position = truckPosition(truck.id);
     const moving = state.deliveries.some(d => d.truck === truck.id && d.start <= state.time && d.returnEnd > state.time);
-    marker.className = 'truck-marker' + (!truck.available && !moving ? ' paused' : '');
+    const speaking = message && message.sender === truck.id;
+    const receiving = message && message.receiver === truck.id;
+    marker.className = 'truck-marker' + (!truck.available && !moving ? ' paused' : '') + (moving ? ' travelling' : '') + (speaking ? ' speaking' : '') + (receiving ? ' receiving' : '');
+    const delivery = state.deliveries.find(d => d.truck === truck.id && d.start <= state.time && d.returnEnd > state.time);
+    const returning = delivery && Math.floor((state.time - delivery.start) / delivery.travel) % 2 === 1;
     marker.style.left = position.x + '%';
     marker.style.top = position.y + '%';
-    marker.textContent = truck.id.replace('TRUCK-', 'Truck ') + (moving ? ' | moving' : ' | depot');
+    marker.innerHTML = art(0, returning ? 'returning' : '') + '<strong>' + truck.id.replace('TRUCK-', 'Truck ') + '</strong><small>' + (moving ? returning ? 'Returning' : 'Delivering' : truck.available ? 'At depot' : 'Unavailable') + '</small>';
     marker.setAttribute('aria-label', truck.name + (moving ? ' travelling' : ' at depot'));
   }
   $('road-state').textContent = state.roadDelayed ? 'Road delay: future travel x2' : 'Roads open';
   $('road-toggle').textContent = state.roadDelayed ? 'Restore road' : 'Disrupt road';
-  $('live-message').innerHTML = message ? '<span class="tag">' + escape(message.type) + '</span><strong>' + escape(message.sender) + ' &rarr; ' + escape(message.receiver) + '</strong><p>' + escape(message.detail) + '</p>' : 'Waiting for agent messages';
-  drawRoads(message);
+  $('live-message').innerHTML = message ? '<span class="tag">' + escape(message.type) + '</span><strong>' + escape(message.sender) + ' &rarr; ' + escape(message.receiver) + ' | ' + timeAt(message.time) + '</strong><p>' + escape(message.detail) + '</p>' : 'Waiting for agent messages';
+  drawRoads();
+  drawConnections(message);
+  renderPopup(message);
 }
 
-function drawRoads(message) {
+function drawRoads() {
   const canvas = $('roads');
   const rect = canvas.getBoundingClientRect();
   if (!rect.width) return;
@@ -203,8 +293,8 @@ function drawRoads(message) {
   }
   const roads = [
     [[13,23],[67,23]], [[13,49],[67,49]], [[13,75],[51,75]],
-    [[23,23],[23,75]], [[42,23],[42,75]], [[59,23],[59,87]],
-    [[67,62],[78,62]], [[67,69],[78,69]], [[78,20],[78,79]],
+    [[23,23],[23,75]], [[42,23],[42,75]], [[59,23],[59,92]],
+    [[67,49],[74,64],[78,64]], [[74,80],[78,80]], [[78,20],[78,79]],
     ...state.locations.map(l => [[78,l.y],[l.x,l.y]])
   ];
   for (const points of roads) {
@@ -213,16 +303,90 @@ function drawRoads(message) {
     road(points, '#b6c1b0', 1, [5, 7]);
   }
   if (state.roadDelayed) road([[78,35],[78,60]], '#d99255', 5, [5, 5]);
-  if (message) {
-    const from = agentPosition(message.sender);
-    const to = agentPosition(message.receiver);
-    road([[from.x,from.y],[to.x,to.y]], '#bd9443', 2, [5, 4]);
-    ctx.setLineDash([]);
-    ctx.fillStyle = '#bd9443';
+
+}
+
+function mapBounds(id) {
+  const position = agentPosition(id);
+  const node = document.getElementById((state.trucks.some(t => t.id === id) ? 'marker-' : 'node-') + visualAgentId(id));
+  const rect = node?.getBoundingClientRect();
+  return { ...position, width: rect?.width || 118, height: rect?.height || 118 };
+}
+
+function drawConnections(message) {
+  const canvas = $('connections');
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width) return;
+  const scale = window.devicePixelRatio || 1;
+  canvas.width = Math.round(rect.width * scale);
+  canvas.height = Math.round(rect.height * scale);
+  const ctx = canvas.getContext('2d');
+  ctx.scale(scale, scale);
+  function arrow(sender, receiver, active) {
+    const from = mapBounds(sender);
+    const to = mapBounds(receiver);
+    const a = { x: from.x / 100 * rect.width, y: from.y / 100 * rect.height };
+    const b = { x: to.x / 100 * rect.width, y: to.y / 100 * rect.height };
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    if (Math.hypot(dx, dy) < 2) return;
+    const startFactor = Math.min(dx ? (from.width / 2 + 6) / Math.abs(dx) : Infinity, dy ? (from.height / 2 + 6) / Math.abs(dy) : Infinity);
+    const endFactor = Math.min(dx ? (to.width / 2 + 9) / Math.abs(dx) : Infinity, dy ? (to.height / 2 + 9) / Math.abs(dy) : Infinity);
+    const start = { x: a.x + dx * startFactor, y: a.y + dy * startFactor };
+    const end = { x: b.x - dx * endFactor, y: b.y - dy * endFactor };
+    if (startFactor + endFactor >= 1) return;
+    ctx.strokeStyle = active ? '#dc2626' : 'rgba(190, 35, 35, .32)';
+    ctx.fillStyle = active ? '#dc2626' : 'rgba(190, 35, 35, .5)';
+    ctx.lineWidth = active ? 3 : 1.5;
+    ctx.lineCap = 'round';
+    ctx.setLineDash(active ? [] : [5, 5]);
     ctx.beginPath();
-    ctx.arc(x(to.x), y(to.y), 5, 0, Math.PI * 2);
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(end.x, end.y);
+    ctx.stroke();
+    const angle = Math.atan2(dy, dx);
+    const size = active ? 12 : 8;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(end.x, end.y);
+    ctx.lineTo(end.x - size * Math.cos(angle - .45), end.y - size * Math.sin(angle - .45));
+    ctx.lineTo(end.x - size * Math.cos(angle + .45), end.y - size * Math.sin(angle + .45));
+    ctx.closePath();
     ctx.fill();
   }
+  if ($('show-connections').checked) {
+    for (const [sender, receiver] of connections) arrow(sender, receiver, false);
+    if (state.stations.some(s => s.id === 'SEW-C')) {
+      arrow('Coordinator', 'SEW-C', false);
+      arrow('SEW-C', 'FIN', false);
+    }
+  }
+  if (message) arrow(message.sender, message.receiver, true);
+}
+
+function renderPopup(message) {
+  const popup = $('agent-popup');
+  popup.hidden = !message;
+  if (!message) return;
+  const key = state.epoch + '-' + message.id;
+  if (popup.dataset.message !== key) {
+    popup.dataset.message = key;
+    popup.innerHTML = '<div class="popup-heading"><strong>' + escape(message.sender) + '</strong><span>' + escape(message.type) + '</span></div><small>To ' + escape(message.receiver) + (message.orderId ? ' | ' + escape(message.orderId) : '') + '</small><p>' + escape(messageText(message)) + '</p>';
+  }
+  const map = $('factory-map').getBoundingClientRect();
+  if (!map.width) return;
+  const actor = mapBounds(message.sender);
+  const bounds = popup.getBoundingClientRect();
+  const actorX = actor.x / 100 * map.width;
+  const actorY = actor.y / 100 * map.height;
+  const left = Math.max(10, Math.min(map.width - bounds.width - 10, actorX - bounds.width / 2));
+  let top = actorY - actor.height / 2 - bounds.height - 15;
+  const below = top < 12;
+  if (below) top = actorY + actor.height / 2 + 15;
+  popup.style.left = left + 'px';
+  popup.style.top = Math.max(12, Math.min(map.height - bounds.height - 12, top)) + 'px';
+  popup.style.setProperty('--tail-left', Math.max(18, Math.min(bounds.width - 18, actorX - left)) + 'px');
+  popup.classList.toggle('below', below);
 }
 
 function renderOrders() {
@@ -287,7 +451,7 @@ function renderMessages() {
   $('filter-label').textContent = filter ? 'Conversation for ' + filter : 'All conversations';
   const filtered = state.messages.filter(m => !filter || m.orderId === filter);
   $('message-list').innerHTML = filtered.slice().reverse().map(m => '<tr><td>' + timeAt(m.time) + '<br>#' + m.id + '</td><td>' + escape(m.sender) + ' &rarr; ' + escape(m.receiver) + '</td><td><span class="message-type">' + escape(m.type) + '</span></td><td>' + escape(m.detail) + '</td></tr>').join('');
-  $('event-position').textContent = followLive ? 'Following live messages' : 'Message ' + (replayIndex + 1) + ' / ' + state.messages.length;
+  $('event-position').textContent = followLive ? 'Live message queue | ' + liveQueue.length + ' pending' : 'Message ' + (replayIndex + 1) + ' / ' + state.messages.length;
   $('event-back').disabled = !state.messages.length || (!followLive && replayIndex === 0);
   $('event-next').disabled = followLive || replayIndex >= state.messages.length - 1;
   $('event-detail').innerHTML = message ? '<strong>' + escape(message.sender) + ' &rarr; ' + escape(message.receiver) + ' | ' + escape(message.type) + '</strong><p>' + escape(message.detail) + '</p><div class="message-meta"><span>Conversation ' + escape(message.conversationId) + '</span><span>Ontology ' + escape(message.ontology) + '</span><span>Protocol ' + escape(message.protocol) + '</span><span>Performative ' + escape(message.performative) + '</span></div>' : 'No messages';
@@ -368,9 +532,22 @@ $('calendar-prev').onclick = () => { calendarDay = Math.max(0, calendarDay - 1);
 $('calendar-next').onclick = () => { calendarDay++; renderCalendar(); };
 $('calendar-now').onclick = () => { calendarDay = Math.floor((state.time + 8) / 24); renderCalendar(); };
 $('clear-filter').onclick = () => { filter = null; renderMessages(); };
-$('event-back').onclick = () => { stopReplay(); replayIndex = Math.max(0, (followLive ? state.messages.length - 1 : replayIndex) - 1); followLive = false; renderReplay(); };
-$('event-next').onclick = () => { stopReplay(); followLive = false; replayIndex = Math.min(state.messages.length - 1, replayIndex + 1); renderReplay(); };
-$('follow-live').onclick = () => { stopReplay(); followLive = true; renderReplay(); };
+function previousMessage() {
+  stopReplay();
+  replayIndex = Math.max(0, (followLive ? Math.max(0, state.messages.findIndex(m => m.id === currentMessage()?.id)) : replayIndex) - 1);
+  followLive = false;
+  renderReplay();
+}
+$('event-back').onclick = previousMessage;
+$('map-previous').onclick = previousMessage;
+function nextMessage() {
+  stopReplay(); followLive = false;
+  replayIndex = Math.min(state.messages.length - 1, replayIndex + 1);
+  renderReplay();
+}
+$('event-next').onclick = nextMessage;
+$('map-next').onclick = nextMessage;
+$('follow-live').onclick = followLatest;
 function toggleReplay() {
   if (replayTimer) { stopReplay(); return; }
   followLive = false; replayIndex = 0; renderReplay();
@@ -379,17 +556,17 @@ function toggleReplay() {
   replayTimer = setInterval(() => {
     if (replayIndex >= state.messages.length - 1) { stopReplay(); return; }
     replayIndex++; renderReplay();
-  }, 1000);
+  }, 2600);
 }
 $('replay').onclick = toggleReplay;
 $('map-replay').onclick = toggleReplay;
-$('map-live').onclick = () => { stopReplay(); followLive = true; renderReplay(); };
+$('map-live').onclick = followLatest;
 $('scenario-list').innerHTML = scenarios.map(([id, name, detail]) => '<button data-scenario="' + id + '"><strong>' + name + '</strong><small>' + detail + '</small></button>').join('');
-window.addEventListener('resize', () => { if (state) drawRoads(currentMessage()); });
+$('show-connections').onchange = () => drawConnections(currentMessage());
+window.addEventListener('resize', () => { if (state) { drawRoads(); drawConnections(currentMessage()); renderPopup(currentMessage()); } });
 const events = new EventSource('/events');
 events.onmessage = event => {
-  state = JSON.parse(event.data);
-  render();
+  acceptState(JSON.parse(event.data));
   $('connection').textContent = 'Live connection';
 };
 events.onerror = () => { $('connection').textContent = 'Reconnecting'; };

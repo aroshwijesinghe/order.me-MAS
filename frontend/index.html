@@ -12,10 +12,10 @@
 <div class="workspace">
 <div class="views">
 <section id="view-map" class="panel">
-<div class="panel-head"><div><h2>Live network</h2><p>Click a building, customer or truck to inspect its agent.</p></div><span class="tag">Fictional campus</span></div>
-<div id="map-scroll"><div id="factory-map"><canvas id="roads" aria-hidden="true"></canvas><div class="zone-label" style="left:6%;top:4%">PEOPLE &amp; MATERIALS</div><div class="zone-label" style="left:34%;top:4%">PRODUCTION FLOOR</div><div class="zone-label" style="left:81%;top:4%">CUSTOMERS</div><div id="map-nodes"></div><div id="map-trucks"></div></div></div>
-<div class="map-key"><span><i class="dot working"></i> Working / travelling</span><span><i class="dot available"></i> Available</span><span><i class="dot paused"></i> Paused / waiting</span><span id="road-state"></span><button data-action="road" id="road-toggle">Disrupt road</button></div>
-<div class="replay-controls map-replay"><button id="map-replay">Watch agent communication</button><button id="map-live">Follow live</button><span id="map-message-position"></span></div><div class="live-message" id="live-message" aria-live="polite"></div>
+<div class="panel-head"><div><h2>Live network</h2><p>Click an agent to inspect it. Speech bubbles show its messages; red arrows point to the recipient.</p></div><span class="tag">Illustrated campus</span></div>
+<div id="map-scroll"><div id="factory-map"><canvas id="roads" aria-hidden="true"></canvas><canvas id="connections" aria-hidden="true"></canvas><div class="zone-label" style="left:6%;top:4%">PEOPLE &amp; MATERIALS</div><div class="zone-label" style="left:34%;top:4%">PRODUCTION FLOOR</div><div class="zone-label" style="left:81%;top:4%">CUSTOMERS</div><div id="map-nodes"></div><div id="map-trucks"></div><div id="agent-popup" class="agent-popup" role="status" hidden></div></div></div>
+<div class="map-key"><span><i class="dot working"></i> Working / travelling</span><span><i class="dot available"></i> Available</span><span><i class="dot paused"></i> Paused / waiting</span><label class="connection-control"><input id="show-connections" type="checkbox" checked> Red agent connections</label><span id="road-state"></span><button data-action="road" id="road-toggle">Disrupt road</button></div>
+<div class="replay-controls map-replay"><button id="map-replay">Watch agent communication</button><button id="map-previous">Previous message</button><button id="map-next">Next message</button><button id="map-live">Latest event</button><span id="map-message-position"></span></div><div class="live-message" id="live-message" aria-live="polite"></div>
 <div class="panel-head"><div><h2>Customer orders</h2><p>Production stages and final delivery update as time advances.</p></div></div><div id="order-list"></div>
 </section>
 <section id="view-calendar" class="panel" hidden>
