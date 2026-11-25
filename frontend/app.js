@@ -130,13 +130,33 @@ function messageText(message) {
   return message.detail;
 }
 
+function freezeCommunication() {
+  const message = currentMessage();
+  stopReplay();
+  clearTimeout(messageTimer);
+  messageTimer = undefined;
+  replayIndex = Math.max(0,state.messages.findIndex(item => item.id === message?.id));
+  followLive = false;
+  communicationActive = Boolean(message);
+  renderReplay();
+}
+
 async function action(type, extra = {}) {
+  if (type === 'pause' || type === 'step') freezeCommunication();
   try {
     const response = await fetch('/api/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type, ...extra }) });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Action failed');
     $('error').hidden = true;
     acceptState(result);
+    if (type === 'play') {
+      if (state.running) {
+        const lastShown = currentMessage()?.id || 0;
+        liveQueue = state.messages.filter(message => message.id > lastShown);
+        followLive = true;
+        showNextLiveMessage();
+      } else freezeCommunication();
+    }
     return true;
   } catch (error) {
     $('error').textContent = error.message;
@@ -212,8 +232,9 @@ function render() {
   $('status').textContent = state.running ? 'Simulation running' : 'Simulation paused';
   $('play').textContent = state.running ? 'Pause simulation' : 'Run simulation';
   $('map-clock').textContent = 'Hour ' + String(state.time).padStart(2, '0');
-  $('map-run-status').textContent = state.running ? 'Running' : 'Paused';
-  $('map-play').textContent = state.running ? 'Pause' : 'Run';
+  $('map-run-status').textContent = state.running ? 'Automatic' : 'Step mode';
+  $('map-play').textContent = state.running ? 'Pause' : 'Auto run';
+  $('map-step-mode').setAttribute('aria-pressed', String(!state.running));
   $('map-play').setAttribute('aria-pressed', String(state.running));
   const delivered = state.orders.filter(o => o.status === 'Delivered').length;
   const onTime = state.orders.filter(o => deliveryFor(o)?.end <= o.deadline).length;

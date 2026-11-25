@@ -1,21 +1,21 @@
 ﻿export function truckDepot(id) {
-  return { x: 74, y: id === 'TRUCK-1' ? 64 : 80 };
+  return { x: id === 'TRUCK-1' ? 65 : 74, y: 68 };
 }
 
 export function deliveryRoad(id, destination) {
   const depot = truckDepot(id);
-  return [depot, { x: 78, y: depot.y }, { x: 78, y: destination.y }, { x: destination.x, y: destination.y }];
+  return [depot, { x: depot.x, y: 59 }, { x: 78, y: 59 }, { x: 78, y: destination.y }, { x: destination.x, y: destination.y }];
 }
 
 export function roadPaths(locations) {
   const depots = [truckDepot('TRUCK-1'), truckDepot('TRUCK-2')];
-  const ys = [...depots.map(point => point.y), ...locations.map(point => point.y)];
+  const ys = [59, ...locations.map(point => point.y)];
   return [
     [[4,94],[4,40],[13,23]],
     [[13,23],[67,23]], [[13,49],[67,49]], [[13,75],[51,75]],
     [[23,23],[23,75]], [[42,23],[42,75]], [[59,23],[59,92]],
-    [[67,49],[74,49],[74,64]],
-    ...depots.map(point => [[point.x,point.y],[78,point.y]]),
+    [[67,49],[67,59]], [[65,59],[78,59]],
+    ...depots.map(point => [[point.x,point.y],[point.x,59]]),
     [[78,Math.min(...ys)],[78,Math.max(...ys)]],
     ...locations.map(point => [[78,point.y],[point.x,point.y]])
   ];

@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import { roadPaths, deliveryRoad, truckDepot, truckPositionAt, truckMotionFrames } from './roads.js';
 import { LOCATIONS } from '../backend/engine.js';
@@ -43,6 +43,8 @@ test('animation keyframes include every bend so interpolated movement cannot cut
 });
 
 test('waiting and consecutive deliveries keep the same depot connection', () => {
+  assert.equal(truckDepot('TRUCK-1').y,truckDepot('TRUCK-2').y);
+  assert.equal(truckDepot('TRUCK-2').x-truckDepot('TRUCK-1').x,9);
   const deliveries=[
     {truck:'TRUCK-1',destination:'school',start:4,travel:2,trips:1,returnEnd:8},
     {truck:'TRUCK-1',destination:'sports',start:8,travel:3,trips:1,returnEnd:14}

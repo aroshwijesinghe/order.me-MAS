@@ -32,7 +32,7 @@ function createUI() {
       remove() { elements.delete(this.id); },
       showModal() { this.open = true; }, close() { this.open = false; },
       getBoundingClientRect() {
-        if (this.id === 'map-controls') return { width: 270, height: 78 };
+        if (this.id === 'map-controls') return { width: 440, height: 78 };
         if (this.id === 'agent-popup') return { width: 248, height: 110 };
         if (this.id.startsWith('marker-')) return { width: 88, height: 91 };
         if (this.id.startsWith('node-')) return { width: 126, height: 128 };
@@ -247,4 +247,18 @@ test('rapid clock steps resume truck animation from its displayed road position'
   const expected=ui.run('truckPositionAt('+JSON.stringify(delivery.truck)+',state.deliveries,state.locations,'+(delivery.start+.5)+',960,738)');
   assert.ok(Math.abs(parseFloat(animations[1].frames[0].left)-expected.x)<.00001);
   assert.ok(Math.abs(parseFloat(animations[1].frames[0].top)-expected.y)<.00001);
+});
+
+test('step mode freezes automatic message playback and navigates one message at a time', () => {
+  const ui=createUI();
+  ui.state(new Factory());
+  ui.run('freezeCommunication()');
+  assert.equal(ui.run('followLive'),false);
+  assert.equal(ui.run('messageTimer'),undefined);
+  assert.equal(ui.run('currentMessage().id'),1);
+  ui.elements.get('map-next').onclick();
+  assert.equal(ui.run('currentMessage().id'),2);
+  ui.elements.get('map-previous').onclick();
+  assert.equal(ui.run('currentMessage().id'),1);
+  assert.equal(ui.elements.get('map-run-status').textContent,'Step mode');
 });
