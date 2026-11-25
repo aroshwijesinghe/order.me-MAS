@@ -53,3 +53,91 @@ test('new orders validate input and negotiate around completed production', () =
   assert.equal(factory.orders.length,4);
   assert.ok(factory.messages.some(m=>m.orderId==='ORD-104' && m.type==='CONFIRM'));
 });
+
+test('stores reserve and consume fabric exactly once across replans', () => {
+  const factory = new Factory();
+  assert.equal(factory.state().reserved, 300);
+  factory.step();
+  const afterIssue = factory.stock;
+  assert.ok(afterIssue < 650);
+  factory.toggleRoad();
+  factory.restock(1);
+  assert.equal(factory.stock, afterIssue + 1);
+  while (factory.time < 40) factory.step();
+  assert.equal(factory.stock, 351);
+  assert.equal(factory.state().reserved, 0);
+  assert.ok(factory.state().orders.every(o => o.status === 'Delivered'));
+});
+
+test('fabric shortages wait without partial commitments and recover after restocking', () => {
+  const factory = new Factory();
+  factory.scenario('fabric');
+  assert.equal(factory.bookings.filter(b => b.orderId === 'ORD-104').length, 0);
+  assert.ok(factory.messages.some(m => m.sender === 'Stores' && m.type === 'WAIT'));
+  factory.restock(1000);
+  assert.equal(factory.bookings.filter(b => b.orderId === 'ORD-104').length, 3);
+  assert.ok(factory.stock >= factory.state().reserved);
+  checkSchedule(factory);
+});
+
+test('HR reduces production rates and preserves staff on active operations', () => {
+  const factory = new Factory();
+  const initialEnd = Math.max(...factory.bookings.map(b => b.end));
+  factory.setWorkers(6);
+  assert.ok(factory.stations.every(s => s.assigned > 0));
+  assert.equal(factory.stations.reduce((sum, s) => sum + s.assigned, 0), 6);
+  assert.ok(Math.max(...factory.bookings.map(b => b.end)) > initialEnd);
+  factory.step();
+  const active = structuredClone(factory.bookings.filter(b => b.start < factory.time && b.end > factory.time));
+  assert.throws(() => factory.setWorkers(0));
+  factory.setWorkers(7);
+  for (const job of active) assert.ok(factory.bookings.some(b => JSON.stringify(b) === JSON.stringify(job)));
+  checkSchedule(factory);
+});
+
+test('trucks dispatch only after finishing and reserve all trips through return', () => {
+  const factory = new Factory();
+  factory.addOrder({name:'Large delivery',quantity:340,priority:1,deadline:80});
+  for (const delivery of factory.deliveries) {
+    const finish = factory.bookings.find(b => b.orderId === delivery.orderId && b.stage === 'finishing');
+    const order = factory.orders.find(o => o.id === delivery.orderId);
+    const truck = factory.trucks.find(t => t.id === delivery.truck);
+    assert.ok(delivery.start >= finish.end);
+    assert.equal(delivery.trips, Math.ceil(order.quantity / truck.capacity));
+    assert.equal(delivery.returnEnd - delivery.start, delivery.trips * delivery.travel * 2);
+  }
+  for (const truck of factory.trucks) {
+    const jobs = factory.deliveries.filter(d => d.truck === truck.id).sort((a,b) => a.start-b.start);
+    for (let i=1; i<jobs.length; i++) assert.ok(jobs[i].start >= jobs[i-1].returnEnd);
+  }
+});
+
+test('fleet shortage retains production and recovers delivery when a truck returns', () => {
+  const factory = new Factory();
+  factory.scenario('truck');
+  assert.equal(factory.deliveries.length, 0);
+  assert.equal(factory.bookings.length, 9);
+  for (let i=0; i<25; i++) factory.step();
+  assert.ok(factory.state().orders.every(o => o.status === 'Ready for dispatch'));
+  factory.toggleTruck('TRUCK-1');
+  assert.equal(factory.deliveries.length, 3);
+  while (factory.time < 60) factory.step();
+  assert.ok(factory.state().orders.every(o => o.status === 'Delivered'));
+});
+
+test('road disruptions preserve active trips and joining agents receive staffing', () => {
+  const factory = new Factory();
+  const departure = Math.min(...factory.deliveries.map(d => d.start));
+  while (factory.time <= departure) factory.step();
+  const active = structuredClone(factory.deliveries.find(d => d.start < factory.time && d.returnEnd > factory.time));
+  factory.toggleRoad();
+  assert.ok(factory.deliveries.some(d => JSON.stringify(d) === JSON.stringify(active)));
+  assert.ok(factory.deliveries.filter(d => d.start >= factory.time).every(d => d.travel >= 4));
+  factory.scenario('join');
+  assert.equal(factory.stations.length, 5);
+  assert.equal(factory.workers, 13);
+  assert.equal(factory.stations.find(s => s.id === 'SEW-C').assigned, 3);
+  assert.throws(() => factory.toggleTruck('unknown'));
+  assert.throws(() => factory.restock(-1));
+  assert.throws(() => factory.setWorkers(1.5));
+});
