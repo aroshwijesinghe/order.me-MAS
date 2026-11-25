@@ -14,13 +14,14 @@ async function action(type, extra = {}) {
 }
 function end(order) { return state.bookings.find(b => b.orderId === order.id && b.stage === 'finishing')?.end; }
 function render() {
+  renderEvidence();
   renderNegotiation();
   $('clock').textContent = `Hour ${String(state.time).padStart(2,'0')}`;
   $('status').textContent = state.running ? 'Production in progress' : 'Simulation paused';
   $('play').textContent = state.running ? 'Pause simulation' : 'Run simulation';
   const complete = state.orders.filter(o => end(o) <= state.time).length;
   const risk = state.orders.filter(o => end(o) === undefined || end(o) > o.deadline).length;
-  const metrics = [['Active orders',state.orders.length-complete,'Across cutting, sewing & finishing'],['On-time plans',state.orders.length-risk,'Based on confirmed completion'],['Orders completed',complete,'All production stages finished'],['Stations available',`${state.stations.filter(s=>s.available).length} / 4`,'Capacity reported by station agents']];
+  const metrics = [['Active orders',state.orders.length-complete,'Across cutting, sewing & finishing'],['On-time plans',state.orders.length-risk,'Based on confirmed completion'],['Orders completed',complete,'All production stages finished'],['Stations available',`${state.stations.filter(s=>s.available).length} / ${state.stations.length}`,'Capacity reported by station agents']];
   $('metrics').innerHTML = metrics.map(([label,value,hint])=>`<div class="metric"><small>${label}</small><strong>${value}</strong><span>${hint}</span></div>`).join('');
   const horizon = Math.max(30,state.time+2,...state.bookings.map(b=>b.end),...state.previous.map(b=>b.end));
   function block(b, previous=false) {
@@ -38,13 +39,14 @@ function render() {
   if (order) description = `Goal: complete ${order.quantity} garments by hour ${order.deadline}. Priority ${order.priority}. Compares complete route finish times across eligible stations.`;
   if (selected==='Monitor') description = 'Observes station availability. Alerts the coordinator to renegotiate future reservations when a station is paused or restored.';
   const recent = state.messages.filter(m=>m.sender===selected||m.receiver===selected).at(-1);
-  $('inspector').innerHTML = `<strong>${escape(selected)}</strong><p>${escape(description)}</p>${recent?`Latest event · ${escape(recent.detail)}`:''}`;
+  $('inspector').innerHTML = `<strong>${escape(selected)}</strong><p>${escape(description)}</p><dl><dt>Beliefs</dt><dd>${escape(station ? 'Own capacity and reserved slots' : order ? 'Station offers and stage completion' : 'Current capacity and order priorities')}</dd><dt>Desires</dt><dd>${escape(station ? 'Process work within capacity' : order ? 'Finish before the deadline' : selected==='Monitor' ? 'Detect availability changes' : 'Allocate feasible production routes')}</dd><dt>Intentions</dt><dd>${escape(station ? 'Honor accepted reservations' : order ? 'Reserve the earliest complete route' : selected==='Monitor' ? 'Report station disruptions' : 'Commit routes in priority order')}</dd><dt>PEAS</dt><dd>Performance ? timely completion and feasible reservations. Environment ? orders and production stations. Actuators ? offers, reservations and alerts. Sensors ? messages, calendars and availability.</dd></dl>${recent?`Latest event · ${escape(recent.detail)}`:''}`;
   $('filter-label').textContent = filter ? `Conversation for ${filter}` : 'All agent conversations';
   $('message-list').innerHTML = state.messages.filter(m=>!filter||m.orderId===filter).slice().reverse().map(m=>`<tr><td>#${m.id} · ${m.time}h</td><td>${escape(m.sender)} → ${escape(m.receiver)}</td><td><span class="message-type">${m.type}</span></td><td>${escape(m.detail)}</td></tr>`).join('');
 }
 document.addEventListener('click', event => {
-  const button = event.target.closest('[data-action],[data-station],[data-order],[data-agent]');
+  const button = event.target.closest('[data-scenario],[data-action],[data-station],[data-order],[data-agent]');
   if (!button) return;
+  if (button.dataset.scenario) { stopReplay(); replayIndex = 0; action('scenario',{name:button.dataset.scenario}); }
   if (button.dataset.action) action(button.dataset.action);
   if (button.dataset.station) action('station',{id:button.dataset.station});
   if (button.dataset.order) { selected = filter = button.dataset.order; render(); }
@@ -75,7 +77,7 @@ function renderNegotiation() {
   ];
   $('agent-flow').innerHTML = roles.map(([name, description]) => '<article><strong>' + name + '</strong><p>' + description + '</p></article>').join('');
   $('event-position').textContent = state.messages.length ? 'Message ' + (replayIndex + 1) + ' of ' + state.messages.length : 'No messages';
-  $('event-detail').innerHTML = message ? '<div class="exchange"><strong>' + escape(message.sender) + '</strong><span>? ' + escape(message.type) + ' ?</span><strong>' + escape(message.receiver) + '</strong></div><p>' + escape(message.detail) + '</p><small>Simulation hour ' + message.time + ' ? Event ' + message.id + '</small>' : '';
+  $('event-detail').innerHTML = message ? '<div class="exchange"><strong>' + escape(message.sender) + '</strong><span>&rarr; ' + escape(message.type) + ' ?</span><strong>' + escape(message.receiver) + '</strong></div><p>' + escape(message.detail) + '</p><small>Simulation hour ' + message.time + ' | Event ' + message.id + '</small><p>Protocol ' + escape(message.protocol || '') + ' | Conversation ' + escape(message.conversationId || '') + ' | Performative ' + escape(message.performative || '') + '</p>' : '';
   $('event-back').disabled = replayIndex === 0;
   $('event-next').disabled = replayIndex >= state.messages.length - 1;
 }
@@ -97,3 +99,21 @@ $('replay').onclick = () => {
     renderNegotiation();
   }, 900);
 };
+
+function renderEvidence() {
+  const messages = state.messages;
+  const count = type => messages.filter(m => m.type === type).length;
+  const changed = state.previous.filter(old => !state.bookings.some(b => b.orderId===old.orderId && b.stage===old.stage && b.station===old.station && b.start===old.start)).length;
+  const evidence = [
+    ['Communication', messages.length + ' recorded messages with sender, receiver and conversation ID.'],
+    ['Negotiation', count('CFP') + ' capacity requests, ' + count('PROPOSE') + ' proposals and ' + count('ACCEPT') + ' accepted reservations.'],
+    ['Coordination', count('CONFIRM') + ' route confirmations. Shared station calendars prevent overlapping reservations.'],
+    ['Autonomy and utility', 'Order agents rank complete routes by earliest finish. Station agents calculate their own free slots.'],
+    ['Adaptation', count('ALERT') + ' disruption alerts. ' + changed + ' previous operations changed or withdrawn during replanning.'],
+    ['Resource failure recovery', state.stations.filter(s=>!s.available).length + ' stations paused. ' + state.orders.filter(o=>end(o)!==undefined).length + ' orders currently have complete routes.'],
+    ['Loose coupling', state.stations.length + ' resource agents discovered by production stage. Use New agent joins to register another sewing agent.'],
+    ['Shared ontology', 'All agents use garment-production-v1 with quantity, stage, station, start, end and deadline.']
+  ];
+  $('property-evidence').innerHTML = evidence.map(([name,detail]) => '<article><strong>'+escape(name)+'</strong><p>'+escape(detail)+'</p></article>').join('');
+  $('noticeboard').innerHTML = state.noticeboard.map(item => '<article><strong>'+escape(item.agent)+'</strong><p>'+escape(item.stage)+' | '+item.rate+' garments/hour</p><p>'+(item.available?'Available':'Paused')+' | '+item.reservations+' reservations</p></article>').join('');
+}

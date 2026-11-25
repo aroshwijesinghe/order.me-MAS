@@ -8,3 +8,7 @@
 .exchange{display:flex;gap:20px;align-items:center;flex-wrap:wrap}.exchange span{color:#658156}
 button:disabled{opacity:.45;cursor:default}
 @media(max-width:800px){#agent-flow{grid-template-columns:1fr 1fr}}
+
+#property-evidence,#noticeboard{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;padding:0 24px 24px}
+#property-evidence article,#noticeboard article{padding:16px;background:#f3f6ef;border-radius:8px}
+dt{font-weight:700;margin-top:10px}dd{margin:3px 0;color:#687c70}
