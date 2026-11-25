@@ -191,3 +191,48 @@ test('percept histories record received messages and real resource observations 
   factory.reset();
   assert.equal(factory.percepts[0].id,1);
 });
+
+test('customer messages cross the company boundary through their assigned manager', () => {
+  const factory = new Factory();
+  const begin = factory.messages.length;
+  factory.message('CUSTOMER-school','CUT','REQUEST','Please review my order','ORD-101');
+  const inbound = factory.messages.slice(begin);
+  assert.deepEqual(inbound.map(message=>[message.sender,message.receiver]),[
+    ['CUSTOMER-school','Manager'],['Manager','CUT']
+  ]);
+  assert.equal(inbound[1].relayOf,inbound[0].id);
+  assert.equal(inbound[1].forwardedFrom,'CUSTOMER-school');
+  assert.equal(inbound[0].conversationId,inbound[1].conversationId);
+  const outgoingStart=factory.messages.length;
+  factory.message('Stores','CUSTOMER-school','INFORM','Material confirmed','ORD-101');
+  const outgoing=factory.messages.slice(outgoingStart);
+  assert.deepEqual(outgoing.map(message=>[message.sender,message.receiver]),[
+    ['Stores','Manager'],['Manager','CUSTOMER-school']
+  ]);
+  assert.equal(outgoing[1].relayOf,outgoing[0].id);
+  assert.equal(outgoing[1].orderId,'ORD-101');
+  assert.ok(factory.percepts.some(percept=>percept.agent==='CUSTOMER-school' && percept.sender==='Manager' && percept.content==='Material confirmed'));
+});
+
+test('all scenarios, visits and delivery receipts preserve manager-only customer contacts', () => {
+  const factory=new Factory();
+  for(const scenario of ['visit','outage','scarcity','urgent','join','staff','fabric','truck','road']) {
+    factory.scenario(scenario);
+    for(let hour=0;hour<45;hour++)factory.step();
+    for(const message of factory.messages) {
+      if(message.sender.startsWith('CUSTOMER-')) assert.equal(message.receiver,'Manager');
+      if(message.receiver.startsWith('CUSTOMER-')) assert.equal(message.sender,'Manager');
+      if(message.relayOf) {
+        const original=factory.messages.find(item=>item.id===message.relayOf);
+        assert.equal(original.receiver,'Manager');
+        assert.equal(original.sender,message.forwardedFrom);
+        assert.equal(original.orderId,message.orderId);
+        assert.equal(original.conversationId,message.conversationId);
+      }
+    }
+  }
+  factory.reset();
+  while(factory.time<35)factory.step();
+  assert.ok(factory.messages.some(message=>message.sender==='Manager' && message.forwardedFrom==='Calendar' && message.receiver==='CUSTOMER-school'));
+  assert.ok(factory.messages.some(message=>message.sender==='Manager' && message.forwardedFrom?.startsWith('TRUCK-') && message.receiver==='CUSTOMER-school'));
+});

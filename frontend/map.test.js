@@ -262,3 +262,17 @@ test('step mode freezes automatic message playback and navigates one message at 
   assert.equal(ui.run('currentMessage().id'),1);
   assert.equal(ui.elements.get('map-run-status').textContent,'Step mode');
 });
+
+test('internal order agents are drawn in the company workspace and customer relays identify their manager', () => {
+  const ui=createUI();
+  const factory=new Factory();
+  ui.state(factory);
+  assert.equal(ui.run("visualAgentId('ORD-101')"),'Coordinator');
+  assert.equal(ui.run("visualAgentId('CUSTOMER-school')"),'CUSTOMER-school');
+  const relay=factory.messages.find(message=>message.forwardedFrom==='Calendar');
+  ui.run('renderPopup('+JSON.stringify(relay)+')');
+  assert.match(ui.elements.get('agent-popup').innerHTML,/Manager/);
+  assert.match(ui.elements.get('agent-popup').innerHTML,/Relayed by manager from Calendar/);
+  ui.run("selected='CUSTOMER-school'; renderAgentProfile()");
+  assert.match(ui.elements.get('agent-profile').innerHTML,/Communication partners include Manager\./);
+});
