@@ -24,7 +24,7 @@ Open http://localhost:3001. Run the engine and resource regression checks with `
 
 ## Simulation walkthrough
 
-1. Open **Factory map** and click **Run simulation** or **Advance 1 hour**. Click buildings, customers or moving trucks to inspect their agent and current work.
+1. Open **Factory map** and click **Run simulation** or **Advance 1 hour**. The full-width map uses larger labels. Click a customer building or visiting customer to open an order form prefilled with its name and delivery location. Click other buildings or trucks for their profiles and controls.
 2. Click **Place customer order**. Enter the customer, garment, quantity, priority, delivery location and delivery deadline in simulation hours, then send the customer to reception. Advance time to watch arrival, order placement and departure. The request enters production planning at arrival.
 3. The manager requests a plan. Stores checks fabric, HR assigns workers, order agents solicit station offers, and the production manager commits a complete route.
 4. Logistics requests truck bids after the planned finishing time. Trucks consider capacity, travel time, multiple trips and return-to-depot commitments. The earliest final arrival is selected.
@@ -50,7 +50,7 @@ Open http://localhost:3001. Run the engine and resource regression checks with `
 | Truck | Offers feasible delivery slots, observes load capacity and reserves return journeys |
 | Monitor | Reports production and road disruptions to trigger replanning |
 
-Click any map agent or visiting customer to open its complete profile. The sidebar also has an **All agent details** button. Profiles expose situatedness, autonomy, adaptivity, sociability, rationality, omniscience, goals, beliefs, intentions, PEAS, available actions, task knowledge, evaluation criteria, task environment classifications and the chronological percept sequence. Stores has a fabric receipt control. HR has an attendance control. Production stations and trucks have pause/restore controls.
+Click any map agent or visiting customer to open its complete profile. The side panel has been removed. Agent controls and the agent selector are available inside the popup profile. Customer profiles are accessible from **Customer agent details** in the order form. Profiles expose situatedness, autonomy, adaptivity, sociability, rationality, omniscience, goals, beliefs, intentions, PEAS, available actions, task knowledge, evaluation criteria, task environment classifications and the chronological percept sequence. The Stores popup has a fabric receipt control. The HR popup has an attendance control. Production stations and trucks have pause/restore controls.
 
 ## Resource and time model
 
