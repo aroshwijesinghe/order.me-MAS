@@ -38,9 +38,9 @@ Open http://localhost:3001. Run the engine and resource regression checks with `
 
 | Agent | Decision and visible effect |
 | --- | --- |
-| Customer | Submits garment requirements and receives delivery commitments |
+| Customer | Sends requirements to the operations manager and receives manager-relayed commitments |
 | Order | Requests stage capacity and selects the earliest complete production route |
-| Operations manager | Approves requests and applies priority and delivery requirements |
+| Operations manager | Acts as the customer contact, forwards approved requests internally and relays updates to the relevant customer |
 | Production manager / coordinator | Commits routes without conflicting station reservations |
 | HR | Allocates staff across stations, reducing effective rates during absence |
 | Stores / warehouse | Reserves fabric, issues it at cutting and holds finished goods for dispatch |
@@ -118,3 +118,10 @@ The router in `frontend/routing.js` uses measured entity bounds and padded horiz
 ## Truck movement
 
 Road drawing and vehicle movement share the road geometry in `frontend/roads.js`. Both trucks park in adjacent bays in the dispatch parking area. Each bay has its own spur into a shared access lane. Outbound and return trips use that lane, the main road and the customer access road. Animation includes every junction crossed between clock updates. Rapid manual steps resume from the displayed position, and repeated loads return along the same route. Resizing and reduced-motion mode use road-aligned snapshot positions.
+
+
+## Customer communication boundary
+
+The operations manager is the assigned contact for every current customer order. Customer-facing messages pass through that manager in both directions. The message router records an internal-to-manager hop followed by a manager-to-customer hop, or a customer-to-manager hop followed by the approved internal request. Relays retain the order/conversation identifier and record the originating message.
+
+Internal order agents run in the company's production-planning workspace and are displayed at the production manager. The live map, message replay, communication log and percept histories use the routed sender and receiver. Calendar commitments and truck delivery reports reach customers through the manager.

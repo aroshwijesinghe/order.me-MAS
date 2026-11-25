@@ -42,9 +42,11 @@ export class Factory {
       { id: 'TRUCK-2', name: 'Delivery truck 2', capacity: 200, available: true }
     ];
     for (const order of this.orders) {
+      order.managerId = 'Manager';
       this.visits.push({ id: 'VISIT-' + (++this.visitSequence), customer: order.customer, destination: order.destination,
         start: -2, arriveAt: 0, departAt: 1, end: 3, orderId: order.id, order: { ...order } });
-      this.message('CUSTOMER-' + order.destination, 'Manager', 'REQUEST', 'Place ' + order.quantity + ' garment order due at hour ' + order.deadline, order.id);
+      this.message('CUSTOMER-' + order.destination, order.managerId, 'REQUEST', 'Place ' + order.quantity + ' garment order due at hour ' + order.deadline, order.id);
+      this.message(order.managerId, 'Coordinator', 'REQUEST', 'Arrange production and delivery for ' + order.customer, order.id);
     }
     this.plan();
   }
@@ -53,14 +55,23 @@ export class Factory {
     this.percepts.push({ id: ++this.perceptSequence, time: this.time, agent, kind, content, orderId, sender });
   }
 
-  message(sender, receiver, type, detail, orderId) {
+  message(sender, receiver, type, detail, orderId, relay = {}) {
+    const manager = this.orders.find(order => order.id === orderId)?.managerId || 'Manager';
+    const customerSender = sender.startsWith('CUSTOMER-');
+    const customerReceiver = receiver.startsWith('CUSTOMER-');
+    if ((customerSender && receiver !== manager) || (customerReceiver && sender !== manager)) {
+      const received = this.message(sender, manager, type, detail, orderId);
+      return this.message(manager, receiver, type, detail, orderId, { relayOf: received.id, forwardedFrom: sender });
+    }
     this.observe(receiver, 'Received ' + type, detail, orderId, sender);
-    this.messages.push({
-      id: ++this.sequence, time: this.time, sender, receiver, type, detail, orderId,
+    const message = {
+      id: ++this.sequence, time: this.time, sender, receiver, type, detail, orderId, ...relay,
       conversationId: orderId ? 'plan-' + this.round + '-' + orderId : 'environment-' + this.round,
       ontology: 'garment-network-v2', protocol: 'capacity-contract-net',
       performative: ({ ACCEPT: 'accept-proposal', CONFIRM: 'inform', ALERT: 'inform', WAIT: 'failure', REGISTER: 'inform', RESERVE: 'agree' })[type] || type.toLowerCase()
-    });
+    };
+    this.messages.push(message);
+    return message;
   }
 
   slot(station, earliest, duration, bookings) {
@@ -261,7 +272,7 @@ export class Factory {
   }
 
   addOrder(input) {
-    const order = { ...this.validateOrder(input), id: 'ORD-' + (101 + this.orders.length) };
+    const order = { ...this.validateOrder(input), id: 'ORD-' + (101 + this.orders.length), managerId: 'Manager' };
     this.orders.push(order);
     this.message('CUSTOMER-' + order.destination, 'Manager', 'REQUEST', 'Place ' + order.quantity + ' garments for ' + order.customer + ', due hour ' + order.deadline, order.id);
     this.message('Manager', 'Coordinator', 'REQUEST', 'Approve order and negotiate materials, staff, production and delivery', order.id);

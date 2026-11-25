@@ -109,7 +109,7 @@ function art(index, className = '') {
 
 function visualAgentId(id) {
   const order = state.orders.find(order => order.id === id);
-  if (order) return 'CUSTOMER-' + order.destination;
+  if (order) return 'Coordinator';
   return id === 'Fleet' ? 'Logistics' : id;
 }
 
@@ -173,11 +173,11 @@ function setView(name) {
 
 function coreAgents() {
   return [
-    { id: 'Manager', name: 'Operations manager', role: 'Management agent', x: 13, y: 23, status: 'Coordinating', goal: 'Fulfil customer delivery deadlines', beliefs: 'Customer priorities, resource availability and delivery commitments', intentions: 'Approve orders and request a feasible end-to-end plan', sensors: 'Order requests and exception alerts', actuators: 'Planning requests and priority policy' },
+    { id: 'Manager', name: 'Operations manager', role: 'Management agent', x: 13, y: 23, status: 'Coordinating', goal: 'Manage customer communication and fulfil delivery deadlines', beliefs: 'Customer priorities, resource availability and delivery commitments', intentions: 'Receive customer requests, coordinate the factory and relay updates to the relevant customer', sensors: 'Customer requests, internal commitments and delivery reports', actuators: 'Manager-approved requests and customer updates' },
     { id: 'HR', name: 'Human resources', role: 'Workforce agent', x: 13, y: 49, status: state.workers + ' workers present', goal: 'Staff production with the available workforce', beliefs: 'Worker attendance and staffing needs for each line', intentions: 'Protect active work, then allocate staff to available stations', sensors: 'Attendance and current operations', actuators: 'Worker allocations that determine effective production rates' },
     { id: 'Stores', name: 'Stores & warehouse', role: 'Inventory agent', x: 13, y: 75, status: state.stock - state.reserved + ' m unreserved', goal: 'Supply fabric and hold finished goods until dispatch', beliefs: state.stock + ' m on hand, ' + state.reserved + ' m reserved', intentions: 'Reserve fabric only for feasible production routes and issue it at cutting', sensors: 'Stock receipts, reservations and finishing reports', actuators: 'Material reservations, fabric issues and truck loading' },
     { id: 'Coordinator', name: 'Production manager', role: 'Coordination agent', x: 34, y: 49, status: 'Plan round ' + state.round, goal: 'Allocate feasible production routes by order priority', beliefs: 'Station offers, stage dependencies and occupied time slots', intentions: 'Commit the earliest finishing complete route without overlaps', sensors: 'Capacity proposals and resource alerts', actuators: 'Accepted reservations and replanning' },
-    { id: 'Calendar', name: 'Order calendar', role: 'Calendar agent', x: 34, y: 75, status: state.orders.length + ' orders tracked', goal: 'Publish production and delivery commitments', beliefs: 'Production reservations and confirmed truck arrivals', intentions: 'Tell customers their revised arrival time', sensors: 'Committed routes and delivery bids', actuators: 'Calendar entries and customer confirmations' },
+    { id: 'Calendar', name: 'Order calendar', role: 'Calendar agent', x: 34, y: 75, status: state.orders.length + ' orders tracked', goal: 'Publish production and delivery commitments', beliefs: 'Production reservations and confirmed truck arrivals', intentions: 'Report revised arrival times to the operations manager', sensors: 'Committed routes and delivery bids', actuators: 'Calendar entries and internal confirmations to the manager' },
     { id: 'Logistics', name: 'Dispatch depot', role: 'Logistics agent', x: 67, y: 49, status: state.trucks.filter(t => t.available).length + ' trucks available', goal: 'Deliver finished garments with available trucks', beliefs: 'Truck capacities, return times and road travel times', intentions: 'Compare bids and accept the earliest final delivery', sensors: 'Production completion times and truck offers', actuators: 'Dispatch reservations and delivery assignments' },
     { id: 'Monitor', name: 'Network monitor', role: 'Monitoring agent', x: 51, y: 92, status: state.roadDelayed ? 'Road delay active' : 'Roads normal', goal: 'Report changes in the operating environment', beliefs: 'Station availability and road condition', intentions: 'Notify managers when future plans need revision', sensors: 'Disruption controls', actuators: 'Alerts that trigger replanning' }
   ];
@@ -197,14 +197,14 @@ function allAgents() {
     ...l, id: 'CUSTOMER-' + l.id, role: 'Customer agent',
     status: state.orders.filter(o => o.destination === l.id).length + ' orders',
     goal: 'Receive garments by the requested deadline', beliefs: 'Order quantity, priority and confirmed delivery time',
-    intentions: 'Place an order and receive delivery updates', sensors: 'Calendar confirmations and delivery receipts', actuators: 'Customer order requests'
+    intentions: 'Place an order with the manager and receive manager updates', sensors: 'Manager confirmations and delivery updates', actuators: 'Requests addressed to the operations manager'
   }));
   const trucks = state.trucks.map(t => ({
     ...t, role: 'Delivery resource agent', status: t.available ? 'Available for bids' : 'Paused for future trips',
     goal: 'Deliver garments and return before the next assignment',
     beliefs: 'Capacity ' + t.capacity + ', route travel time and own dispatch calendar',
     intentions: 'Bid for the earliest feasible arrival without overlapping journeys',
-    sensors: 'Delivery CFPs and road conditions', actuators: 'Delivery bids, vehicle journeys and receipt reports'
+    sensors: 'Delivery CFPs and road conditions', actuators: 'Internal delivery bids, vehicle journeys and arrival reports relayed by the manager'
   }));
   const orders = state.orders.map(o => ({
     ...o, role: 'Order agent', status: o.status,
@@ -217,8 +217,8 @@ function allAgents() {
     id: visit.id, name: visit.customer, role: 'Visiting customer agent', status: visit.phase,
     goal: 'Submit ' + visit.order.quantity + ' garments for delivery by ' + timeAt(visit.order.deadline),
     beliefs: 'Visit schedule, own order request and factory acknowledgement',
-    intentions: 'Walk to reception, place the order, then return through the entrance',
-    sensors: 'Simulation clock and order acknowledgement', actuators: 'Walking, order submission and departure'
+    intentions: 'Walk to reception, submit the request to the manager, then return through the entrance',
+    sensors: 'Simulation clock and manager acknowledgement', actuators: 'Walking, requests to the manager and departure'
   }));
   return [...core, ...stations, ...customers, ...trucks, ...orders, ...visitors];
 }
@@ -301,8 +301,8 @@ function renderVisitors() {
     marker.className = 'customer-marker ' + (visit.phase === 'Arriving' || visit.phase === 'Leaving' ? 'walking' : '') + (visit.phase === 'Leaving' ? ' leaving' : '');
     marker.style.left = position.x + '%';
     marker.style.top = position.y + '%';
-    marker.innerHTML = '<img src="/assets/customer-visitor.png" alt="" draggable="false"><strong>' + escape(visit.customer) + '</strong><small>' + escape(visit.phase) + '</small>' + (visit.id === speakingVisit?.id ? '<span class="visit-speech">Please make ' + visit.order.quantity + ' garments.<br>Order ' + escape(visit.orderId) + ' submitted.</span>' : '');
-    marker.setAttribute('aria-label', visit.customer + ', ' + visit.phase + '. Open agent details');
+    marker.innerHTML = '<img src="/assets/customer-visitor.png" alt="" draggable="false"><strong>' + escape(visit.customer) + '</strong><small>' + escape(visit.phase) + '</small>' + (visit.id === speakingVisit?.id ? '<span class="visit-speech">Manager, please arrange ' + visit.order.quantity + ' garments.<br>Order ' + escape(visit.orderId) + ' submitted.</span>' : '');
+    marker.setAttribute('aria-label', visit.customer + ', ' + visit.phase + '. Place an order through the manager');
   }
   $('visit-status').innerHTML = '<strong>Reception visits</strong>' + (active.length ? active.map(visit => '<button data-agent="' + visit.id + '">' + escape(visit.customer) + ' | ' + escape(visit.phase) + ' | ' + (visit.orderId ? escape(visit.orderId) : 'Submit at ' + timeAt(visit.arriveAt)) + '</button>').join('') : '<p>Customers have left. Their orders continue through production and delivery.</p>');
 }
@@ -498,7 +498,7 @@ function renderPopup(message) {
   const key = state.epoch + '-' + message.id;
   if (popup.dataset.message !== key) {
     popup.dataset.message = key;
-    popup.innerHTML = '<div class="popup-heading"><strong>' + escape(message.sender) + '</strong><span>' + escape(message.type) + '</span></div><small>To ' + escape(message.receiver) + (message.orderId ? ' | ' + escape(message.orderId) : '') + '</small><p>' + escape(messageText(message)) + '</p>';
+    popup.innerHTML = '<div class="popup-heading"><strong>' + escape(message.sender) + '</strong><span>' + escape(message.type) + '</span></div><small>To ' + escape(message.receiver) + (message.orderId ? ' | ' + escape(message.orderId) : '') + '</small><p>' + escape(messageText(message)) + '</p>' + (message.forwardedFrom ? '<small>Relayed by manager from ' + escape(message.forwardedFrom) + '</small>' : '');
   }
   const map = $('factory-map').getBoundingClientRect();
   if (!map.width) return;
@@ -584,11 +584,11 @@ function renderMessages() {
   const message = currentMessage();
   $('filter-label').textContent = filter ? 'Conversation for ' + filter : 'All conversations';
   const filtered = state.messages.filter(m => !filter || m.orderId === filter);
-  $('message-list').innerHTML = filtered.slice().reverse().map(m => '<tr><td>' + timeAt(m.time) + '<br>#' + m.id + '</td><td>' + escape(m.sender) + ' &rarr; ' + escape(m.receiver) + '</td><td><span class="message-type">' + escape(m.type) + '</span></td><td>' + escape(m.detail) + '</td></tr>').join('');
+  $('message-list').innerHTML = filtered.slice().reverse().map(m => '<tr><td>' + timeAt(m.time) + '<br>#' + m.id + '</td><td>' + escape(m.sender) + ' &rarr; ' + escape(m.receiver) + '</td><td><span class="message-type">' + escape(m.type) + '</span></td><td>' + escape(m.detail) + (m.forwardedFrom ? '<br><small>Manager relay from ' + escape(m.forwardedFrom) + ' | original message #' + m.relayOf + '</small>' : '') + '</td></tr>').join('');
   $('event-position').textContent = followLive ? 'Live message queue | ' + liveQueue.length + ' pending' : 'Message ' + (replayIndex + 1) + ' / ' + state.messages.length;
   $('event-back').disabled = !state.messages.length || (!followLive && replayIndex === 0);
   $('event-next').disabled = followLive || replayIndex >= state.messages.length - 1;
-  $('event-detail').innerHTML = message ? '<strong>' + escape(message.sender) + ' &rarr; ' + escape(message.receiver) + ' | ' + escape(message.type) + '</strong><p>' + escape(message.detail) + '</p><div class="message-meta"><span>Conversation ' + escape(message.conversationId) + '</span><span>Ontology ' + escape(message.ontology) + '</span><span>Protocol ' + escape(message.protocol) + '</span><span>Performative ' + escape(message.performative) + '</span></div>' : 'No messages';
+  $('event-detail').innerHTML = message ? '<strong>' + escape(message.sender) + ' &rarr; ' + escape(message.receiver) + ' | ' + escape(message.type) + '</strong><p>' + escape(message.detail) + '</p><div class="message-meta"><span>Conversation ' + escape(message.conversationId) + '</span><span>Ontology ' + escape(message.ontology) + '</span><span>Protocol ' + escape(message.protocol) + '</span><span>Performative ' + escape(message.performative) + '</span>' + (message.forwardedFrom ? '<span>Manager relay from ' + escape(message.forwardedFrom) + ' | message #' + message.relayOf + '</span>' : '') + '</div>' : 'No messages';
 }
 
 function renderEvidence() {
@@ -776,7 +776,7 @@ function agentDetails(agent) {
   const policies = {
     Manager: {
       type: 'Goal-based agent', reason: 'Routes approved customer requirements into the production planning process.',
-      actions: ['Approve an order request', 'Request a production plan', 'Receive shortage alerts'],
+      actions: ['Receive customer requests', 'Forward approved internal requests', 'Receive shortage alerts', 'Relay delivery commitments and receipts to the relevant customer'],
       knowledge: 'Customer quantities, delivery deadlines, fixed priority policy and resource exceptions.',
       criteria: 'Feasible fulfilment commitments and delivery deadlines.',
       adaptive: 'Receives revised commitments and resource exceptions as the factory changes.'
@@ -804,7 +804,7 @@ function agentDetails(agent) {
     },
     Calendar: {
       type: 'Model-based reflex agent', reason: 'Maintains commitments and reports the arrival time when a reservation changes.',
-      actions: ['Publish production bookings', 'Publish dispatch and arrival', 'Compare arrival to deadline', 'Notify customer'],
+      actions: ['Publish production bookings', 'Publish dispatch and arrival', 'Compare arrival to deadline', 'Report commitments to the manager'],
       knowledge: 'Committed production and delivery times, customer deadlines and simulation date.',
       criteria: 'Displayed commitments agree with the current resource schedules.',
       adaptive: 'Publishes the revised schedule after a new planning round.'
@@ -832,7 +832,7 @@ function agentDetails(agent) {
     },
     truck: {
       type: 'Goal-based agent', reason: 'Computes the earliest feasible journey using load size and the vehicle return calendar.',
-      actions: ['Bid for delivery', 'Carry repeated loads', 'Report final receipt', 'Return to depot', 'Refuse new work when paused'],
+      actions: ['Bid internally for delivery', 'Carry repeated loads', 'Report final receipt through the manager', 'Return to depot', 'Refuse new work when paused'],
       knowledge: 'Own load capacity, travel duration, accepted journeys and return times.',
       criteria: 'Capacity-respecting trips and no overlap through the final return to depot.',
       adaptive: 'Future bids use the latest road duration and availability.'
@@ -846,7 +846,7 @@ function agentDetails(agent) {
     },
     customer: {
       type: 'Model-based reflex agent', reason: 'Remembers the visit phase and follows arrival, submission and departure rules.',
-      actions: ['Walk to reception', 'Submit the configured order', 'Receive acknowledgement', 'Leave reception', 'Receive delivery updates'],
+      actions: ['Walk to reception', 'Submit the configured order to the manager', 'Receive manager acknowledgement', 'Leave reception', 'Receive delivery updates from the manager'],
       knowledge: 'Own requested quantity, delivery deadline, destination and visit schedule.',
       criteria: 'Submit exactly once on arrival and leave while the factory continues fulfilment.',
       adaptive: 'Tracks factory confirmations. The customer request is configured by the user.'
@@ -866,7 +866,7 @@ function agentDetails(agent) {
   if (visit) current = visit.phase + '; submission ' + timeAt(visit.arriveAt) + '; departure ' + timeAt(visit.departAt) + '; exit ' + timeAt(visit.end) + '.';
   if (agent.id === 'Stores') current = state.stock + ' m on hand; ' + state.reserved + ' m reserved; ' + (state.stock - state.reserved) + ' m unreserved.';
   if (agent.id === 'HR') current = state.stations.reduce((sum, item) => sum + item.assigned, 0) + ' workers assigned out of ' + state.workers + ' present.';
-  const location = order ? 'Order planning workspace for ' + order.customer : visit ? 'Customer entrance and reception walkway' : truck ? 'Dispatch depot and customer road network' : agent.id.startsWith('CUSTOMER-') ? 'Customer delivery location' : 'Factory campus at map position ' + Math.round(position.x) + '%, ' + Math.round(position.y) + '%';
+  const location = order ? 'Company production-planning workspace for ' + order.customer : visit ? 'Customer entrance and reception walkway' : truck ? 'Dispatch depot and customer road network' : agent.id.startsWith('CUSTOMER-') ? 'Customer delivery location' : 'Factory campus at map position ' + Math.round(position.x) + '%, ' + Math.round(position.y) + '%';
   return { policy, percepts, peers, messages, current, location };
 }
 
