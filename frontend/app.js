@@ -25,6 +25,7 @@ const connections = [
   ['Calendar','CUSTOMER-sports'], ['Calendar','CUSTOMER-workwear']
 ];
 const scenarios = [
+  ['visit', 'Customer reception visit', 'A customer arrives, submits an order and leaves. Advance simulation time to follow the visit.'],
   ['outage', 'Production line outage', 'Sewing A pauses. Orders negotiate with the remaining line.'],
   ['staff', 'Worker absence', 'HR has six workers. Reduced staffing slows future production.'],
   ['fabric', 'Fabric shortage', 'A large customer order waits until you restock stores.'],
@@ -50,6 +51,7 @@ function acceptState(snapshot) {
     stopReplay();
     followLive = true;
     replayIndex = 0;
+    $('map-visitors').innerHTML = '';
     clearTimeout(messageTimer);
     messageTimer = undefined;
     liveQueue = [];
@@ -173,7 +175,14 @@ function allAgents() {
     intentions: 'Choose the earliest complete production route, then obtain a delivery',
     sensors: 'Station proposals and resource status', actuators: 'Capacity requests and accepted production slots'
   }));
-  return [...core, ...stations, ...customers, ...trucks, ...orders];
+  const visitors = (state.visits || []).map(visit => ({
+    id: visit.id, name: visit.customer, role: 'Visiting customer agent', status: visit.phase,
+    goal: 'Submit ' + visit.order.quantity + ' garments for delivery by ' + timeAt(visit.order.deadline),
+    beliefs: 'Visit schedule, own order request and factory acknowledgement',
+    intentions: 'Walk to reception, place the order, then return through the entrance',
+    sensors: 'Simulation clock and order acknowledgement', actuators: 'Walking, order submission and departure'
+  }));
+  return [...core, ...stations, ...customers, ...trucks, ...orders, ...visitors];
 }
 
 function render() {
@@ -201,9 +210,64 @@ function render() {
   renderCalendar();
   renderMessages();
   renderEvidence();
+  if ($('agent-dialog').open) renderAgentProfile();
+}
+
+function customerPosition(visit) {
+  const offset = ((Number(visit.id.split('-')[1]) - 1) % 3) * 17;
+  const gate = { x: 3, y: 94 };
+  const reception = { x: 3, y: 40 + offset };
+  let progress;
+  if (state.time < visit.arriveAt) progress = Math.max(0, Math.min(1, (state.time - visit.start) / (visit.arriveAt - visit.start)));
+  else if (state.time >= visit.departAt) progress = Math.max(0, 1 - (state.time - visit.departAt) / (visit.end - visit.departAt));
+  else progress = 1;
+  return { x: gate.x, y: gate.y + (reception.y - gate.y) * progress };
+}
+
+function renderVisitors() {
+  const active = (state.visits || []).filter(visit => visit.phase !== 'Left');
+  // Preserve markers across snapshots so transitions follow the same visible customer.
+  for (const node of $('map-visitors').querySelectorAll('[data-visit]')) {
+    if (active.some(visit => visit.id === node.dataset.visit)) {
+      node.style.opacity = '';
+      node.style.pointerEvents = '';
+      delete node.dataset.exiting;
+      continue;
+    }
+    if (node.dataset.exiting) continue;
+    node.dataset.exiting = 'true';
+    node.style.left = '3%';
+    node.style.top = '94%';
+    node.style.opacity = '0';
+    node.style.pointerEvents = 'none';
+    const epoch = state.epoch;
+    setTimeout(() => {
+      if (state.epoch === epoch && node.dataset.exiting) node.remove();
+    }, 1100);
+  }
+  const speakingVisit = active.find(visit => visit.phase === 'Placing order');
+  for (const visit of active) {
+    let marker = document.getElementById('node-' + visit.id);
+    if (!marker) {
+      marker = document.createElement('button');
+      marker.id = 'node-' + visit.id;
+      marker.dataset.visit = visit.id;
+      marker.dataset.agent = visit.id;
+      $('map-visitors').append(marker);
+    }
+    const position = customerPosition(visit);
+    marker.className = 'customer-marker ' + (visit.phase === 'Arriving' || visit.phase === 'Leaving' ? 'walking' : '') + (visit.phase === 'Leaving' ? ' leaving' : '');
+    marker.style.left = position.x + '%';
+    marker.style.top = position.y + '%';
+    marker.innerHTML = '<img src="/assets/customer-visitor.png" alt="" draggable="false"><strong>' + escape(visit.customer) + '</strong><small>' + escape(visit.phase) + '</small>' + (visit.id === speakingVisit?.id ? '<span class="visit-speech">Please make ' + visit.order.quantity + ' garments.<br>Order ' + escape(visit.orderId) + ' submitted.</span>' : '');
+    marker.setAttribute('aria-label', visit.customer + ', ' + visit.phase + '. Open agent details');
+  }
+  $('visit-status').innerHTML = '<strong>Reception visits</strong>' + (active.length ? active.map(visit => '<button data-agent="' + visit.id + '">' + escape(visit.customer) + ' | ' + escape(visit.phase) + ' | ' + (visit.orderId ? escape(visit.orderId) : 'Submit at ' + timeAt(visit.arriveAt)) + '</button>').join('') : '<p>Customers have left. Their orders continue through production and delivery.</p>');
 }
 
 function agentPosition(id) {
+  const visit = state.visits?.find(visit => visit.id === id);
+  if (visit) return customerPosition(visit);
   id = visualAgentId(id);
   if (state.trucks.some(t => t.id === id)) return truckPosition(id);
   return allAgents().find(a => a.id === id) || { x: 34, y: 49 };
@@ -265,6 +329,7 @@ function renderMap() {
   $('road-state').textContent = state.roadDelayed ? 'Road delay: future travel x2' : 'Roads open';
   $('road-toggle').textContent = state.roadDelayed ? 'Restore road' : 'Disrupt road';
   $('live-message').innerHTML = message ? '<span class="tag">' + escape(message.type) + '</span><strong>' + escape(message.sender) + ' &rarr; ' + escape(message.receiver) + ' | ' + timeAt(message.time) + '</strong><p>' + escape(message.detail) + '</p>' : 'Waiting for agent messages';
+  renderVisitors();
   drawRoads();
   drawConnections(message);
   renderPopup(message);
@@ -292,6 +357,7 @@ function drawRoads() {
     ctx.stroke();
   }
   const roads = [
+    [[4,94],[4,40],[13,23]],
     [[13,23],[67,23]], [[13,49],[67,49]], [[13,75],[51,75]],
     [[23,23],[23,75]], [[42,23],[42,75]], [[59,23],[59,92]],
     [[67,49],[74,64],[78,64]], [[74,80],[78,80]], [[78,20],[78,79]],
@@ -361,6 +427,7 @@ function drawConnections(message) {
       arrow('SEW-C', 'FIN', false);
     }
   }
+  for (const visit of (state.visits || []).filter(visit => visit.phase === 'Placing order')) arrow(visit.id, 'Manager', true);
   if (message) arrow(message.sender, message.receiver, true);
 }
 
@@ -419,7 +486,7 @@ function renderInspector() {
   const related = state.orders.find(o => o.id === selected);
   const truckJobs = state.deliveries.filter(d => d.truck === selected);
   const assignments = truckJobs.map(d => '<p>' + d.orderId + ' | dispatch ' + timeAt(d.start) + ' | arrive ' + timeAt(d.end) + ' | return ' + timeAt(d.returnEnd) + ' | ' + d.trips + ' trip(s)</p>').join('');
-  $('inspector').innerHTML = '<div class="agent-kind">' + escape(agent.role) + '</div><h3>' + escape(agent.name) + '</h3><p>' + escape(agent.status) + '</p><div class="agent-actions">' + controls + '</div><dl><dt>Goal</dt><dd>' + escape(agent.goal) + '</dd><dt>Beliefs</dt><dd>' + escape(agent.beliefs) + '</dd><dt>Intentions</dt><dd>' + escape(agent.intentions) + '</dd><dt>Percepts / sensors</dt><dd>' + escape(agent.sensors) + '</dd><dt>Actions / actuators</dt><dd>' + escape(agent.actuators) + '</dd></dl>' + assignments + (related ? '<button data-conversation="' + related.id + '">View order messages</button>' : '') + (recent ? '<div class="latest-event"><strong>Latest decision</strong><p>' + escape(recent.detail) + '</p></div>' : '');
+  $('inspector').innerHTML = '<div class="agent-kind">' + escape(agent.role) + '</div><h3>' + escape(agent.name) + '</h3><p>' + escape(agent.status) + '</p><div class="agent-actions">' + controls + '<button id="full-profile">All agent details</button></div><dl><dt>Goal</dt><dd>' + escape(agent.goal) + '</dd><dt>Beliefs</dt><dd>' + escape(agent.beliefs) + '</dd><dt>Intentions</dt><dd>' + escape(agent.intentions) + '</dd><dt>Percepts / sensors</dt><dd>' + escape(agent.sensors) + '</dd><dt>Actions / actuators</dt><dd>' + escape(agent.actuators) + '</dd></dl>' + assignments + (related ? '<button data-conversation="' + related.id + '">View order messages</button>' : '') + (recent ? '<div class="latest-event"><strong>Latest decision</strong><p>' + escape(recent.detail) + '</p></div>' : '');
 }
 
 function calendarEvents() {
@@ -483,7 +550,7 @@ function stopReplay() {
 function renderReplay() { renderMap(); renderMessages(); }
 function openOrder() {
   $('order-deadline').value = Math.min(1000, state.time + 30);
-  $('order-deadline').min = state.time + 1;
+  $('order-deadline').min = state.time + 3;
   $('order-error').hidden = true;
   $('order-dialog').showModal();
 }
@@ -496,7 +563,7 @@ document.addEventListener('click', async event => {
     if (button.dataset.action === 'reset') { stopReplay(); followLive = true; calendarDay = 0; }
     await action(button.dataset.action);
   }
-  if (button.dataset.agent) { selected = button.dataset.agent; renderMap(); renderInspector(); }
+  if (button.dataset.agent) { selected = button.dataset.agent; renderMap(); renderInspector(); openAgentProfile(); }
   if (button.dataset.station) await action('station', { id: button.dataset.station });
   if (button.dataset.truck) await action('truck', { id: button.dataset.truck });
   if (button.dataset.order) { selected = button.dataset.order; filter = selected; renderMap(); renderInspector(); renderMessages(); }
@@ -511,6 +578,7 @@ document.addEventListener('click', event => {
   if (event.target.id === 'apply-workers') action('workers', { count: Number($('worker-count').value) });
   if (event.target.id === 'apply-restock') action('restock', { quantity: Number($('restock-quantity').value) });
   if (event.target.id === 'inspect-order') openOrder();
+  if (event.target.id === 'full-profile') openAgentProfile();
 });
 document.addEventListener('keydown', event => {
   if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('[role=button]')) {
@@ -520,11 +588,12 @@ document.addEventListener('keydown', event => {
 $('agent-select').onchange = event => { selected = event.target.value; renderMap(); renderInspector(); };
 $('new-order').onclick = openOrder;
 $('close-order').onclick = () => $('order-dialog').close();
+$('close-profile').onclick = () => $('agent-dialog').close();
 $('order-form').onsubmit = async event => {
   event.preventDefault();
   const data = new FormData(event.target);
-  const ok = await action('order', { order: { name: data.get('name'), customer: data.get('customer'), destination: data.get('destination'), quantity: Number(data.get('quantity')), priority: Number(data.get('priority')), deadline: Number(data.get('deadline')) } });
-  if (ok) { event.target.reset(); $('order-dialog').close(); selected = state.orders.at(-1).id; setView('map'); }
+  const ok = await action('visit', { order: { name: data.get('name'), customer: data.get('customer'), destination: data.get('destination'), quantity: Number(data.get('quantity')), priority: Number(data.get('priority')), deadline: Number(data.get('deadline')) } });
+  if (ok) { event.target.reset(); $('order-dialog').close(); selected = state.visits.at(-1).id; setView('map'); }
   else { $('order-error').textContent = $('error').textContent; $('order-error').hidden = false; }
 };
 $('compare').onchange = renderCalendar;
@@ -570,3 +639,150 @@ events.onmessage = event => {
   $('connection').textContent = 'Live connection';
 };
 events.onerror = () => { $('connection').textContent = 'Reconnecting'; };
+function agentDetails(agent) {
+  const station = state.stations.find(item => item.id === agent.id);
+  const truck = state.trucks.find(item => item.id === agent.id);
+  const order = state.orders.find(item => item.id === agent.id);
+  const visit = state.visits?.find(item => item.id === agent.id);
+  let key = agent.id;
+  if (station) key = 'station';
+  if (truck) key = 'truck';
+  if (order) key = 'order';
+  if (visit || agent.id.startsWith('CUSTOMER-')) key = 'customer';
+  const policies = {
+    Manager: {
+      type: 'Goal-based agent', reason: 'Routes approved customer requirements into the production planning process.',
+      actions: ['Approve an order request', 'Request a production plan', 'Receive shortage alerts'],
+      knowledge: 'Customer quantities, delivery deadlines, fixed priority policy and resource exceptions.',
+      criteria: 'Feasible fulfilment commitments and delivery deadlines.',
+      adaptive: 'Receives revised commitments and resource exceptions as the factory changes.'
+    },
+    Coordinator: {
+      type: 'Goal-based agent', reason: 'Builds feasible cutting, sewing and finishing routes and commits them in priority order.',
+      actions: ['Order requests by priority and deadline', 'Commit a complete route', 'Preserve active work', 'Replan future reservations'],
+      knowledge: 'All station calendars, stage dependencies, current time and order priorities.',
+      criteria: 'Complete feasible routes, non-overlapping resource calendars and preserved active work.',
+      adaptive: 'Recalculates future routes after station, staff and material changes.'
+    },
+    HR: {
+      type: 'Goal-based agent', reason: 'Uses a fixed staffing heuristic to maintain stage coverage within attendance limits.',
+      actions: ['Protect active crews', 'Allocate a minimum crew', 'Fill target crew sizes', 'Report remaining staff'],
+      knowledge: 'Attendance, station crew requirements and operations already in progress.',
+      criteria: 'Assigned workers stay within attendance and active work retains its crew.',
+      adaptive: 'Allocations and effective rates change when attendance or available lines change.'
+    },
+    Stores: {
+      type: 'Model-based reflex agent', reason: 'Uses the stock and reservation ledger to reserve, issue or defer fabric requests.',
+      actions: ['Check available fabric', 'Reserve fabric', 'Issue fabric at cutting', 'Receive restock', 'Load finished garments'],
+      knowledge: 'Physical fabric stock, committed reservations, issued materials and finished production.',
+      criteria: 'Non-negative unreserved fabric and one material issue per order.',
+      adaptive: 'Updated stock receipts allow waiting orders to obtain reservations.'
+    },
+    Calendar: {
+      type: 'Model-based reflex agent', reason: 'Maintains commitments and reports the arrival time when a reservation changes.',
+      actions: ['Publish production bookings', 'Publish dispatch and arrival', 'Compare arrival to deadline', 'Notify customer'],
+      knowledge: 'Committed production and delivery times, customer deadlines and simulation date.',
+      criteria: 'Displayed commitments agree with the current resource schedules.',
+      adaptive: 'Publishes the revised schedule after a new planning round.'
+    },
+    Logistics: {
+      type: 'Utility-based agent', reason: 'Ranks truck bids by final arrival hour, then trip count. Utility uses lexicographic (-arrival, -trips).',
+      actions: ['Request truck bids', 'Compare arrival times', 'Select a delivery', 'Wait for fleet capacity'],
+      knowledge: 'Production ready times, truck capacities, truck return calendars and road delays.',
+      criteria: 'Earliest final customer arrival, using fewer trips to break arrival ties.',
+      adaptive: 'Rebids future journeys when roads or fleet availability change.'
+    },
+    Monitor: {
+      type: 'Simple reflex agent', reason: 'A station or road change immediately triggers an alert using a condition-action rule.',
+      actions: ['Observe availability change', 'Report road condition', 'Send an alert to a manager'],
+      knowledge: 'Current station and road status plus a fixed event-to-alert rule.',
+      criteria: 'Report each controlled disruption so affected plans can be updated.',
+      adaptive: 'Responds to current events using its fixed alert rule.'
+    },
+    station: {
+      type: 'Goal-based agent', reason: 'Searches its calendar for the earliest free slot that can process the requested quantity.',
+      actions: ['Receive capacity request', 'Propose a free slot', 'Refuse unavailable capacity', 'Complete a reserved stage'],
+      knowledge: 'Own calendar, target production rate, assigned staff and required crew.',
+      criteria: 'Earliest feasible slot, no overlapping work and completion of accepted stages.',
+      adaptive: 'New offers reflect staffing and availability while active bookings are preserved.'
+    },
+    truck: {
+      type: 'Goal-based agent', reason: 'Computes the earliest feasible journey using load size and the vehicle return calendar.',
+      actions: ['Bid for delivery', 'Carry repeated loads', 'Report final receipt', 'Return to depot', 'Refuse new work when paused'],
+      knowledge: 'Own load capacity, travel duration, accepted journeys and return times.',
+      criteria: 'Capacity-respecting trips and no overlap through the final return to depot.',
+      adaptive: 'Future bids use the latest road duration and availability.'
+    },
+    order: {
+      type: 'Utility-based agent', reason: 'Ranks complete production routes by finish time. Utility is -productionFinishHour.',
+      actions: ['Request fabric', 'Send capacity requests', 'Compare complete routes', 'Accept stage reservations', 'Wait for missing resources'],
+      knowledge: 'Garment quantity, priority, deadline, fabric responses and station offers.',
+      criteria: 'Earliest complete production route. Delivery timing is delegated to logistics.',
+      adaptive: 'Chooses a revised feasible route after resource changes.'
+    },
+    customer: {
+      type: 'Model-based reflex agent', reason: 'Remembers the visit phase and follows arrival, submission and departure rules.',
+      actions: ['Walk to reception', 'Submit the configured order', 'Receive acknowledgement', 'Leave reception', 'Receive delivery updates'],
+      knowledge: 'Own requested quantity, delivery deadline, destination and visit schedule.',
+      criteria: 'Submit exactly once on arrival and leave while the factory continues fulfilment.',
+      adaptive: 'Tracks factory confirmations. The customer request is configured by the user.'
+    }
+  };
+  const policy = policies[key];
+  const perceivedBy = visit ? 'CUSTOMER-' + visit.destination : agent.id;
+  const percepts = (state.percepts || []).filter(percept => percept.agent === perceivedBy && (!visit || !visit.orderId || !percept.orderId || percept.orderId === visit.orderId));
+  const messages = state.messages.filter(message => (message.sender === perceivedBy || message.receiver === perceivedBy) && (!visit || !visit.orderId || !message.orderId || message.orderId === visit.orderId));
+  const peers = [...new Set(messages.map(message => message.sender === perceivedBy ? message.receiver : message.sender))];
+  const position = agentPosition(agent.id);
+  const delivered = state.orders.filter(item => item.status === 'Delivered').length;
+  let current = state.orders.length + ' orders; ' + delivered + ' delivered.';
+  if (station) current = station.assigned + '/' + station.required + ' staff; effective rate ' + Math.round(station.rate * station.assigned / station.required) + ' garments/hour.';
+  if (truck) current = 'Load capacity ' + truck.capacity + '; ' + state.deliveries.filter(item => item.truck === truck.id).length + ' assigned deliveries.';
+  if (order) current = order.status + '; planned production finish ' + (productionEnd(order) ?? 'waiting') + '; delivery ' + (deliveryFor(order)?.end ?? 'waiting') + '.';
+  if (visit) current = visit.phase + '; submission ' + timeAt(visit.arriveAt) + '; departure ' + timeAt(visit.departAt) + '; exit ' + timeAt(visit.end) + '.';
+  if (agent.id === 'Stores') current = state.stock + ' m on hand; ' + state.reserved + ' m reserved; ' + (state.stock - state.reserved) + ' m unreserved.';
+  if (agent.id === 'HR') current = state.stations.reduce((sum, item) => sum + item.assigned, 0) + ' workers assigned out of ' + state.workers + ' present.';
+  const location = order ? 'Order planning workspace for ' + order.customer : visit ? 'Customer entrance and reception walkway' : truck ? 'Dispatch depot and customer road network' : agent.id.startsWith('CUSTOMER-') ? 'Customer delivery location' : 'Factory campus at map position ' + Math.round(position.x) + '%, ' + Math.round(position.y) + '%';
+  return { policy, percepts, peers, messages, current, location };
+}
+
+function openAgentProfile() {
+  renderAgentProfile();
+  if (!$('agent-dialog').open) $('agent-dialog').showModal();
+}
+
+function renderAgentProfile() {
+  const agent = allAgents().find(item => item.id === selected);
+  if (!agent) return;
+  const { policy, percepts, peers, messages, current, location } = agentDetails(agent);
+  const fields = rows => '<dl>' + rows.map(([name, value]) => '<dt>' + escape(name) + '</dt><dd>' + escape(value) + '</dd>').join('') + '</dl>';
+  $('profile-title').textContent = agent.name + ' (' + agent.id + ')';
+  const properties = [
+    ['Situatedness', location + '. Current simulated time ' + timeAt(state.time) + '.'],
+    ['Autonomy', 'Limited operational autonomy. Once triggered, this role applies its own configured decision rules. Goals and policies are supplied by the application or customer.'],
+    ['Adaptivity', policy.adaptive + ' Learning-based policy updates are unimplemented.'],
+    ['Sociability', messages.length + ' recorded messages. Communication partners include ' + (peers.join(', ') || 'no exchanges yet') + '.'],
+    ['Rationality', 'Bounded, criterion-driven policy using currently modeled inputs and its configured task knowledge. Global optimality is unverified.'],
+    ['Omniscience', 'Future manual orders and disruptions are unknown. Current simulation transitions follow known rules.']
+  ];
+  const peas = [
+    ['Performance / evaluation criteria', policy.criteria],
+    ['Environment', location + ', other agents, stock, workforce, resource calendars and simulation clock.'],
+    ['Sensors / percepts', agent.sensors],
+    ['Actuators', agent.actuators],
+    ['Available actions', policy.actions.join('. ') + '.'],
+    ['Task knowledge', policy.knowledge],
+    ['Current observations', current]
+  ];
+  const environment = [
+    ['Observability', 'Fully observable modeled state', 'The single-process controller holds exact current resource ledgers and calendars. Each role reads task-relevant fields.'],
+    ['Outcomes', 'Deterministic', 'Given the same state and external actions, transitions repeat. Stochastic failures are unimplemented.'],
+    ['Task dependence', 'Sequential', 'Reservations and earlier stages constrain later production and delivery decisions.'],
+    ['Change over time', 'Dynamic during simulation', 'The clock and other agents change the world between decisions. A planning transaction uses a stable snapshot.'],
+    ['State and time', 'Discrete', 'The engine uses integer hours, garment counts and finite actions. Smooth map motion interpolates snapshots for display.'],
+    ['Transition knowledge', 'Known', 'Production durations, material use and journey rules are encoded in the simulator.'],
+    ['Agent population', 'Multi-agent', 'Roles coordinate shared resources while order requests compete for capacity.']
+  ];
+  const history = percepts.length ? '<ol class="percept-history">' + percepts.map(percept => '<li><span>#' + percept.id + ' | ' + timeAt(percept.time) + ' | ' + escape(percept.sender) + '</span><strong>' + escape(percept.kind) + '</strong><p>' + escape(percept.content) + '</p></li>').join('') + '</ol>' : '<p>This agent has no recorded received inputs yet.</p>';
+  $('agent-profile').innerHTML = '<div class="profile-summary"><span class="pill">' + escape(agent.role) + '</span><span class="pill">' + escape(policy.type) + '</span><p>' + escape(policy.reason) + '</p><p>' + escape(current) + '</p></div><div class="profile-grid"><section><h3>Agent properties</h3>' + fields(properties) + '</section><section><h3>PEAS and task knowledge</h3>' + fields(peas) + '</section><section><h3>Goals and internal model</h3>' + fields([['Desires / goal', agent.goal], ['Beliefs', agent.beliefs], ['Intentions', agent.intentions]]) + '</section><section><h3>Agent architecture guide</h3>' + fields([['Simple reflex', 'A current condition selects a fixed response.'], ['Model-based reflex', 'A stored model helps choose a condition-based response.'], ['Goal-based', 'Possible actions are evaluated for reaching a goal.'], ['Utility-based', 'A preference score ranks feasible alternatives.']]) + '</section><section class="profile-wide"><h3>Task environment classification</h3><div class="environment-grid">' + environment.map(([dimension, classification, reason]) => '<article><small>' + escape(dimension) + '</small><strong>' + escape(classification) + '</strong><p>' + escape(reason) + '</p></article>').join('') + '</div><p>Partially observable, stochastic, episodic, static and continuous environments are alternative classifications. The current simulator uses the values shown above.</p></section><section class="profile-wide"><h3>Percept sequence (' + percepts.length + ' recorded inputs)</h3><p>Chronological received messages and decision-time sensor observations, retained for this simulation run.</p>' + history + '</section></div>';
+}

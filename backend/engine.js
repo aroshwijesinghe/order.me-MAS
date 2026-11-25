@@ -14,11 +14,15 @@ export class Factory {
     this.round = 0;
     this.sequence = 0;
     this.messages = [];
+    this.percepts = [];
+    this.perceptSequence = 0;
     this.previous = [];
     this.bookings = [];
     this.deliveries = [];
     this.dispatched = [];
     this.materialConsumed = [];
+    this.visits = [];
+    this.visitSequence = 0;
     this.stock = 650;
     this.workers = 10;
     this.roadDelayed = false;
@@ -37,11 +41,20 @@ export class Factory {
       { id: 'TRUCK-1', name: 'Delivery truck 1', capacity: 150, available: true },
       { id: 'TRUCK-2', name: 'Delivery truck 2', capacity: 200, available: true }
     ];
-    for (const order of this.orders) this.message('CUSTOMER-' + order.destination, 'Manager', 'REQUEST', 'Place ' + order.quantity + ' garment order due at hour ' + order.deadline, order.id);
+    for (const order of this.orders) {
+      this.visits.push({ id: 'VISIT-' + (++this.visitSequence), customer: order.customer, destination: order.destination,
+        start: -2, arriveAt: 0, departAt: 1, end: 3, orderId: order.id, order: { ...order } });
+      this.message('CUSTOMER-' + order.destination, 'Manager', 'REQUEST', 'Place ' + order.quantity + ' garment order due at hour ' + order.deadline, order.id);
+    }
     this.plan();
   }
 
+  observe(agent, kind, content, orderId, sender = 'Environment') {
+    this.percepts.push({ id: ++this.perceptSequence, time: this.time, agent, kind, content, orderId, sender });
+  }
+
   message(sender, receiver, type, detail, orderId) {
+    this.observe(receiver, 'Received ' + type, detail, orderId, sender);
     this.messages.push({
       id: ++this.sequence, time: this.time, sender, receiver, type, detail, orderId,
       conversationId: orderId ? 'plan-' + this.round + '-' + orderId : 'environment-' + this.round,
@@ -62,6 +75,7 @@ export class Factory {
   allocateWorkers() {
     // Reserve staff for operations already in progress before assigning future capacity.
     let remaining = this.workers;
+    this.observe('HR', 'Attendance', this.workers + ' workers present; active operations retain their crews.');
     const active = this.stations.filter(s => this.isBusy(s.id));
     for (const station of active) remaining -= station.assigned;
     const idle = this.stations.filter(s => !this.isBusy(s.id));
@@ -87,6 +101,7 @@ export class Factory {
     this.bookings = this.bookings.filter(b => b.start < this.time);
     this.deliveries = this.deliveries.filter(d => d.start < this.time);
     this.allocateWorkers();
+    this.observe('Coordinator', 'Production calendar', this.bookings.length + ' active or completed reservations retained; ' + this.orders.length + ' orders to consider.');
     const committedMaterials = new Set(this.bookings.filter(b => b.stage === 'cutting').map(b => b.orderId));
     let availableFabric = this.stock - this.orders.filter(o => committedMaterials.has(o.id) && !this.materialConsumed.includes(o.id)).reduce((sum, o) => sum + o.quantity, 0);
     const ordered = [...this.orders].sort((a, b) => b.priority - a.priority || a.deadline - b.deadline || a.id.localeCompare(b.id));
@@ -95,6 +110,7 @@ export class Factory {
       let routes = [{ bookings: [], end: this.time }];
       if (!committedMaterials.has(order.id)) {
         this.message(order.id, 'Stores', 'REQUEST', 'Request ' + order.quantity + ' metres of fabric', order.id);
+        this.observe('Stores', 'Fabric ledger', this.stock + ' m physical stock; ' + availableFabric + ' m unreserved for this planning round.', order.id);
         if (order.quantity > availableFabric) {
           this.message('Stores', order.id, 'WAIT', 'Fabric shortage. Need ' + order.quantity + ' m, unreserved stock ' + availableFabric + ' m.', order.id);
           continue;
@@ -111,6 +127,7 @@ export class Factory {
         const next = [];
         for (const route of routes) {
           for (const station of eligible) {
+            this.observe(station.id, 'Station state', (station.available ? 'Available' : 'Paused') + '; ' + station.assigned + ' workers; target rate ' + station.rate + ' garments/hour.', order.id);
             if (!station.available || !station.assigned) {
               this.message(station.id, order.id, 'REFUSE', station.available ? 'No workers assigned by HR' : 'Station paused for future bookings', order.id);
               continue;
@@ -148,6 +165,7 @@ export class Factory {
     const travel = location.travel * (this.roadDelayed ? 2 : 1);
     const bids = [];
     for (const truck of this.trucks) {
+      this.observe(truck.id, 'Fleet state', 'Capacity ' + truck.capacity + '; one-way travel ' + travel + ' hours; ' + (truck.available ? 'available' : 'paused'), order.id);
       if (!truck.available) {
         this.message(truck.id, 'Logistics', 'REFUSE', 'Truck unavailable for new deliveries', order.id);
         continue;
@@ -178,6 +196,7 @@ export class Factory {
     const station = this.stations.find(s => s.id === id);
     if (!station) throw new Error('Unknown station');
     station.available = !station.available;
+    this.observe('Monitor', 'Station availability', station.name + (station.available ? ' restored' : ' paused'));
     this.message('Monitor', 'Manager', 'ALERT', station.name + (station.available ? ' restored.' : ' paused. Active work finishes.'));
     this.replan();
   }
@@ -208,21 +227,46 @@ export class Factory {
 
   toggleRoad() {
     this.roadDelayed = !this.roadDelayed;
+    this.observe('Monitor', 'Road condition', this.roadDelayed ? 'Travel delay active' : 'Normal travel');
     this.message('Monitor', 'Logistics', 'ALERT', this.roadDelayed ? 'Road disruption doubles travel time for future dispatches.' : 'Road restored to normal travel time.');
     this.replan();
   }
 
-  addOrder(input) {
+  validateOrder(input, earliestDeadline = this.time) {
     if (!input || typeof input !== 'object') throw new Error('Order details required');
     const { name, quantity, priority, deadline } = input;
     const destination = input.destination || 'school';
     const customer = input.customer || LOCATIONS.find(l => l.id === destination)?.name;
-    if (typeof name !== 'string' || !name.trim() || name.length > 80 || typeof customer !== 'string' || !customer.trim() || customer.length > 80 || !LOCATIONS.some(l => l.id === destination) || !Number.isInteger(quantity) || quantity < 1 || quantity > 10000 || ![1, 2, 3].includes(priority) || !Number.isInteger(deadline) || deadline <= this.time || deadline > 1000) throw new Error('Enter a name, customer, destination, quantity 1-10000, priority 1-3 and future deadline up to hour 1000');
-    const order = { id: 'ORD-' + (101 + this.orders.length), name: name.trim(), customer: customer.trim(), destination, quantity, priority, deadline };
+    if (typeof name !== 'string' || !name.trim() || name.length > 80 || typeof customer !== 'string' || !customer.trim() || customer.length > 80 || !LOCATIONS.some(l => l.id === destination) || !Number.isInteger(quantity) || quantity < 1 || quantity > 10000 || ![1, 2, 3].includes(priority) || !Number.isInteger(deadline) || deadline <= earliestDeadline || deadline > 1000) throw new Error('Enter a name, customer, destination, quantity 1-10000, priority 1-3 and future deadline up to hour 1000');
+    return { name: name.trim(), customer: customer.trim(), destination, quantity, priority, deadline };
+  }
+
+  queueCustomer(input) {
+    const arriveAt = Math.max(this.time + 2, ...this.visits.filter(v => !v.orderId).map(v => v.arriveAt + 1));
+    const order = this.validateOrder(input);
+    if (order.deadline <= arriveAt) throw new Error('Delivery deadline must be later than customer arrival at hour ' + arriveAt);
+    const visit = { id: 'VISIT-' + (++this.visitSequence), customer: order.customer, destination: order.destination,
+      start: arriveAt - 2, arriveAt, departAt: arriveAt + 1, end: arriveAt + 3, orderId: null, order };
+    this.visits.push(visit);
+    this.message('CUSTOMER-' + order.destination, 'Manager', 'INFORM', order.customer + ' is visiting reception. Order submission at hour ' + arriveAt + '.');
+    return visit;
+  }
+
+  visitPhase(visit) {
+    if (this.time < visit.start) return 'Waiting at gate';
+    if (this.time < visit.arriveAt) return 'Arriving';
+    if (this.time < visit.departAt) return 'Placing order';
+    if (this.time < visit.end) return 'Leaving';
+    return 'Left';
+  }
+
+  addOrder(input) {
+    const order = { ...this.validateOrder(input), id: 'ORD-' + (101 + this.orders.length) };
     this.orders.push(order);
-    this.message('CUSTOMER-' + destination, 'Manager', 'REQUEST', 'Place ' + quantity + ' garments for ' + order.customer + ', due hour ' + deadline, order.id);
+    this.message('CUSTOMER-' + order.destination, 'Manager', 'REQUEST', 'Place ' + order.quantity + ' garments for ' + order.customer + ', due hour ' + order.deadline, order.id);
     this.message('Manager', 'Coordinator', 'REQUEST', 'Approve order and negotiate materials, staff, production and delivery', order.id);
     this.replan();
+    return order;
   }
 
   announceDispatches() {
@@ -241,6 +285,13 @@ export class Factory {
       this.message('Stores', booking.station, 'INFORM', 'Issue ' + order.quantity + ' m fabric for cutting', order.id);
     }
     this.time++;
+    for (const visit of this.visits) {
+      if (!visit.orderId && visit.arriveAt <= this.time) {
+        const order = this.addOrder(visit.order);
+        visit.orderId = order.id;
+      }
+      if (visit.departAt === this.time) this.message('CUSTOMER-' + visit.destination, 'Manager', 'INFORM', visit.customer + ' leaves reception. Order remains with the factory.', visit.orderId);
+    }
     for (const booking of this.bookings.filter(b => b.end === this.time)) {
       this.message(booking.station, booking.stage === 'finishing' ? 'Stores' : booking.orderId, 'INFORM', booking.stage + ' completed', booking.orderId);
     }
@@ -249,12 +300,13 @@ export class Factory {
       if (delivery.end === this.time) this.message(delivery.truck, 'CUSTOMER-' + delivery.destination, 'INFORM', 'All garments delivered. Customer receipt confirmed.', delivery.orderId);
       if (delivery.returnEnd === this.time) this.message(delivery.truck, 'Logistics', 'INFORM', 'Returned to dispatch depot', delivery.orderId);
     }
-    if (this.time >= Math.max(0, ...this.bookings.map(b => b.end), ...this.deliveries.map(d => d.returnEnd))) this.running = false;
+    if (this.time >= Math.max(0, ...this.bookings.map(b => b.end), ...this.deliveries.map(d => d.returnEnd), ...this.visits.map(v => v.end))) this.running = false;
   }
 
   scenario(name) {
-    if (!['outage', 'scarcity', 'urgent', 'join', 'staff', 'fabric', 'truck', 'road'].includes(name)) throw new Error('Unknown scenario');
+    if (!['visit', 'outage', 'scarcity', 'urgent', 'join', 'staff', 'fabric', 'truck', 'road'].includes(name)) throw new Error('Unknown scenario');
     this.reset();
+    if (name === 'visit') this.queueCustomer({ name: 'Visitor uniform order', customer: 'New campus customer', quantity: 60, priority: 2, deadline: 30, destination: 'school' });
     if (name === 'outage') this.toggleStation('SEW-A');
     if (name === 'scarcity') { this.toggleStation('SEW-A'); this.toggleStation('SEW-B'); }
     if (name === 'urgent') this.addOrder({ name: 'Emergency uniform order', quantity: 160, priority: 3, deadline: 12 });
@@ -284,8 +336,9 @@ export class Factory {
   state() {
     const reserved = this.orders.filter(o => !this.materialConsumed.includes(o.id) && this.bookings.some(b => b.orderId === o.id && b.stage === 'cutting')).reduce((sum, o) => sum + o.quantity, 0);
     return {
-      epoch: this.epoch, round: this.round, time: this.time, running: this.running,
+      percepts: this.percepts, epoch: this.epoch, round: this.round, time: this.time, running: this.running,
       orders: this.orders.map(o => ({ ...o, status: this.orderStatus(o) })),
+      visits: this.visits.map(v => ({ ...v, phase: this.visitPhase(v) })),
       stations: this.stations, trucks: this.trucks, deliveries: this.deliveries,
       stock: this.stock, reserved, workers: this.workers, roadDelayed: this.roadDelayed,
       locations: LOCATIONS, bookings: this.bookings, previous: this.previous, messages: this.messages,

@@ -141,3 +141,53 @@ test('road disruptions preserve active trips and joining agents receive staffing
   assert.throws(() => factory.restock(-1));
   assert.throws(() => factory.setWorkers(1.5));
 });
+
+test('customer visit submits once at arrival and leaves without removing the order', () => {
+  const factory = new Factory();
+  const visit = factory.queueCustomer({name:'Reception order',customer:'Campus visitor',quantity:40,priority:2,deadline:30});
+  assert.equal(factory.orders.length,3);
+  assert.equal(factory.visitPhase(visit),'Arriving');
+  factory.step();
+  assert.equal(factory.orders.length,3);
+  factory.step();
+  assert.equal(factory.orders.length,4);
+  assert.equal(factory.visitPhase(visit),'Placing order');
+  assert.equal(visit.orderId,'ORD-104');
+  factory.step();
+  assert.equal(factory.visitPhase(visit),'Leaving');
+  factory.step();
+  factory.step();
+  assert.equal(factory.visitPhase(visit),'Left');
+  assert.equal(factory.orders.length,4);
+  assert.equal(factory.messages.filter(m=>m.type==='REQUEST' && m.receiver==='Manager' && m.orderId===visit.orderId).length,1);
+  checkSchedule(factory);
+});
+
+test('queued visitors have distinct submission slots and invalid visits leave no partial state', () => {
+  const factory = new Factory();
+  const input = {name:'Visitor order',quantity:20,priority:1,deadline:20};
+  const first = factory.queueCustomer(input);
+  const second = factory.queueCustomer(input);
+  assert.equal(second.arriveAt, first.arriveAt + 1);
+  const count = factory.visits.length;
+  assert.throws(() => factory.queueCustomer({...input,deadline:factory.time+1}));
+  assert.equal(factory.visits.length,count);
+  for(let i=0;i<6;i++)factory.step();
+  assert.ok(first.orderId && second.orderId && first.orderId!==second.orderId);
+  assert.equal(factory.orders.length,5);
+});
+
+test('percept histories record received messages and real resource observations in order', () => {
+  const factory = new Factory();
+  const before = factory.percepts.length;
+  factory.toggleRoad();
+  assert.ok(factory.percepts.length>before);
+  assert.ok(factory.percepts.some(p=>p.agent==='Monitor' && p.kind==='Road condition'));
+  assert.ok(factory.percepts.some(p=>p.agent==='HR' && p.kind==='Attendance'));
+  for(const message of factory.messages) {
+    assert.ok(factory.percepts.some(p=>p.agent===message.receiver && p.sender===message.sender && p.content===message.detail));
+  }
+  assert.ok(factory.percepts.every((percept,index)=>percept.id===index+1));
+  factory.reset();
+  assert.equal(factory.percepts[0].id,1);
+});
