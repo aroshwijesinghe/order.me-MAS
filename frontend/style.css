@@ -184,3 +184,23 @@ input,select{display:block;width:100%;padding:10px;border:1px solid #c7d6cb;bord
   #profile-controls { padding: 0 16px; }
   #customer-profile { margin: 10px 0 0; }
 }
+
+.map-controls {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 7;
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  padding: 9px 12px;
+  border: 1px solid #bfd2bf;
+  border-radius: 10px;
+  background: #fffffff5;
+  box-shadow: 0 3px 12px #29443615;
+}
+.map-clock { min-width: 100px; }
+.map-clock span { display: block; font-size: 10px; letter-spacing: .7px; color: #69816c; }
+.map-clock strong { display: block; font-size: 23px; line-height: 1.25; font-variant-numeric: tabular-nums; }
+.map-clock small { display: block; font-size: 11px; color: #66806c; }
+.map-controls button { padding: 8px 12px; font-size: 13px; }

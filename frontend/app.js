@@ -207,6 +207,10 @@ function render() {
   $('date').textContent = dateAt(state.time) + ' (simulated)';
   $('status').textContent = state.running ? 'Simulation running' : 'Simulation paused';
   $('play').textContent = state.running ? 'Pause simulation' : 'Run simulation';
+  $('map-clock').textContent = 'Hour ' + String(state.time).padStart(2, '0');
+  $('map-run-status').textContent = state.running ? 'Running' : 'Paused';
+  $('map-play').textContent = state.running ? 'Pause' : 'Run';
+  $('map-play').setAttribute('aria-pressed', String(state.running));
   const delivered = state.orders.filter(o => o.status === 'Delivered').length;
   const onTime = state.orders.filter(o => deliveryFor(o)?.end <= o.deadline).length;
   const transit = state.orders.filter(o => o.status === 'In transit').length;
@@ -432,6 +436,10 @@ function drawConnections(message) {
     const top = Number.isFinite(box.top) ? box.top - rect.top : parseFloat(popup.style.top);
     rectangles.push({ id: 'popup', left, top, right: left + box.width, bottom: top + box.height });
   }
+  const controls = $('map-controls').getBoundingClientRect();
+  const controlsLeft = Number.isFinite(controls.left) ? controls.left - rect.left : 12;
+  const controlsTop = Number.isFinite(controls.top) ? controls.top - rect.top : 12;
+  rectangles.push({ id: 'map-controls', left: controlsLeft, top: controlsTop, right: controlsLeft + controls.width, bottom: controlsTop + controls.height });
   const route = routeMessage(from, to, rectangles, rect.width, rect.height);
   if (route.length < 2) return;
   ctx.strokeStyle = communicationColor(message);
@@ -471,8 +479,16 @@ function renderPopup(message) {
   const actorY = actor.y / 100 * map.height;
   const left = Math.max(10, Math.min(map.width - bounds.width - 10, actorX - bounds.width / 2));
   let top = actorY - actor.height / 2 - bounds.height - 15;
-  const below = top < 12;
+  let below = top < 12;
   if (below) top = actorY + actor.height / 2 + 15;
+  const controls = $('map-controls').getBoundingClientRect();
+  const controlsLeft = Number.isFinite(controls.left) ? controls.left - map.left : 12;
+  const controlsTop = Number.isFinite(controls.top) ? controls.top - map.top : 12;
+  if (left < controlsLeft + controls.width && left + bounds.width > controlsLeft &&
+      top < controlsTop + controls.height && top + bounds.height > controlsTop) {
+    below = true;
+    top = actorY + actor.height / 2 + 15;
+  }
   popup.style.left = left + 'px';
   popup.style.top = Math.max(12, Math.min(map.height - bounds.height - 12, top)) + 'px';
   popup.style.setProperty('--tail-left', Math.max(18, Math.min(bounds.width - 18, actorX - left)) + 'px');

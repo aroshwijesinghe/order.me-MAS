@@ -30,6 +30,7 @@ function createUI() {
       remove() { elements.delete(this.id); },
       showModal() { this.open = true; }, close() { this.open = false; },
       getBoundingClientRect() {
+        if (this.id === 'map-controls') return { width: 270, height: 78 };
         if (this.id === 'agent-popup') return { width: 248, height: 110 };
         if (this.id.startsWith('marker-')) return { width: 88, height: 91 };
         if (this.id.startsWith('node-')) return { width: 126, height: 128 };

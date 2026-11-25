@@ -24,7 +24,7 @@ Open http://localhost:3001. Run the engine and resource regression checks with `
 
 ## Simulation walkthrough
 
-1. Open **Factory map** and click **Run simulation** or **Advance 1 hour**. The full-width map uses larger labels. Click a customer building or visiting customer to open an order form prefilled with its name and delivery location. Click other buildings or trucks for their profiles and controls.
+1. Open **Factory map**. The top-left corner shows elapsed simulation hours, **Run/Pause** and **Reset**. **Advance 1 hour** in the main toolbar performs one manual simulation step, letting you inspect production, visits and deliveries hour by hour. The full-width map uses larger labels. Click a customer building or visiting customer to open an order form prefilled with its name and delivery location. Click other buildings or trucks for their profiles and controls.
 2. Click **Place customer order**. Enter the customer, garment, quantity, priority, delivery location and delivery deadline in simulation hours, then send the customer to reception. Advance time to watch arrival, order placement and departure. The request enters production planning at arrival.
 3. The manager requests a plan. Stores checks fabric, HR assigns workers, order agents solicit station offers, and the production manager commits a complete route.
 4. Logistics requests truck bids after the planned finishing time. Trucks consider capacity, travel time, multiple trips and return-to-depot commitments. The earliest final arrival is selected.
