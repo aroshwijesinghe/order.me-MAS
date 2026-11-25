@@ -75,3 +75,9 @@ This project uses the garment factory scenario. The agents execute deterministic
 8. Advance production to see INFORM messages for completed stages.
 
 The UI exposes autonomous order decisions, station capacity constraints, agent communication, negotiation, resource competition, coordination, monitoring, and disruption recovery. The assignment PPTX is unavailable in this workspace, so coverage of its individual requirements remains unverified.
+
+## MAS demonstration lab
+
+Use Station outage, Capacity shortage, Urgent order, or New agent joins to reset into a reproducible scenario. The evidence cards report actual messages, route confirmations, and changed reservations. The shared capacity notice board displays current resource advertisements. Replay a message to inspect its conversation ID, ontology, protocol, and performative. Select an agent for its BDI model and PEAS description.
+
+The blood-network reference informed these demonstrations. This implementation uses deterministic scheduling agents within one process. Its ACL-style metadata and capacity negotiation are a simplified Contract-Net model. The notice board is a read-only view of shared resource state. BDI and PEAS describe the implemented rules. Learning, coordinator failover, donor-style broadcasts, multi-round constraint relaxation, and a together-versus-alone emergence benchmark remain future work. Resource outage recovery demonstrates redundancy among sewing stations only.

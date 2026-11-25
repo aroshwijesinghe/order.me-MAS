@@ -24,6 +24,7 @@ const server = http.createServer(async (req,res) => {
       for await (const chunk of req) { body += chunk; if (body.length > 10000) throw new Error('Request too large'); }
       const action = JSON.parse(body);
       switch (action.type) {
+        case 'scenario': factory.scenario(action.name); break;
         case 'reset': factory.reset(); break;
         case 'step': factory.step(); break;
         case 'play': factory.running = !factory.running; break;

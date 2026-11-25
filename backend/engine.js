@@ -18,10 +18,14 @@ export class Factory {
     this.messages = [];
     this.previous = [];
     this.sequence = 0;
+    this.round = 0;
     this.plan();
   }
   message(sender, receiver, type, detail, orderId) {
-    this.messages.push({ id: ++this.sequence, time: this.time, sender, receiver, type, detail, orderId });
+    const conversationId = orderId ? `plan-${this.round}-${orderId}` : `environment-${this.round}`;
+    this.messages.push({ id: ++this.sequence, time: this.time, sender, receiver, type, detail, orderId,
+      conversationId, ontology: 'garment-production-v1', protocol: 'capacity-contract-net',
+      performative: ({ACCEPT:'accept-proposal', CONFIRM:'inform', ALERT:'inform', WAIT:'failure'})[type] || type.toLowerCase() });
   }
   slot(station, earliest, duration, bookings) {
     let start = earliest;
@@ -32,6 +36,7 @@ export class Factory {
     return { start, end: start + duration };
   }
   plan() {
+    this.round++;
     // Synchronous coordinator commits each complete route atomically.
     // Preserve completed and in-progress work when rescheduling future operations.
     this.bookings = this.bookings.filter(b => b.start < this.time);
@@ -94,5 +99,18 @@ export class Factory {
     for (const booking of this.bookings.filter(b => b.end === this.time)) this.message(booking.station, booking.orderId, 'INFORM', `${booking.stage} completed`, booking.orderId);
     if (this.time >= Math.max(0, ...this.bookings.map(b => b.end))) this.running = false;
   }
-  state() { return {time:this.time, running:this.running, orders:this.orders, stations:this.stations, bookings:this.bookings, previous:this.previous, messages:this.messages}; }
+  scenario(name) {
+    if (!['outage','scarcity','urgent','join'].includes(name)) throw new Error('Unknown scenario');
+    this.reset();
+    if (name === 'outage') this.toggleStation('SEW-A');
+    if (name === 'scarcity') { this.toggleStation('SEW-A'); this.toggleStation('SEW-B'); }
+    if (name === 'urgent') this.addOrder({name:'Emergency uniform order', quantity:160, priority:3, deadline:12});
+    if (name === 'join') {
+      this.previous = structuredClone(this.bookings);
+      this.stations.push({id:'SEW-C',name:'Sewing line C',stage:'sewing',rate:35,available:true});
+      this.message('SEW-C','Coordinator','REGISTER','New sewing agent advertises 35 garments/hour');
+      this.plan();
+    }
+  }
+  state() { return {round:this.round, noticeboard:this.stations.map(s => ({agent:s.id,stage:s.stage,rate:s.rate,available:s.available,reservations:this.bookings.filter(b=>b.station===s.id).length})), time:this.time, running:this.running, orders:this.orders, stations:this.stations, bookings:this.bookings, previous:this.previous, messages:this.messages}; }
 }
