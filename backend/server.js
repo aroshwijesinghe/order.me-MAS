@@ -26,7 +26,8 @@ const server = http.createServer(async (req,res) => {
       switch (action.type) {
         case 'scenario': factory.scenario(action.name); break;
         case 'reset': factory.reset(); break;
-        case 'step': factory.step(); break;
+        case 'step': factory.running = false; factory.step(); break;
+        case 'pause': factory.running = false; break;
         case 'play': factory.running = !factory.running; break;
         case 'station': factory.toggleStation(action.id); break;
         case 'truck': factory.toggleTruck(action.id); break;
