@@ -1,83 +1,84 @@
-# Order.me
+﻿# Order.me
 
-A garment factory scheduling website with deterministic autonomous order agents, workstation agents, a coordinator, and a disruption monitor.
+A garment factory network simulation with customer, order, management, HR, inventory, production, calendar, monitoring and delivery agents.
 
 ## Run locally
 
-Install Node.js 20 or newer, then open PowerShell in the project folder.
+Install Node.js 20 or newer. Open PowerShell in the repository root.
 
 ```powershell
 cd C:\workspace\order.me-MAS
 npm start
 ```
 
-Open http://localhost:3000 in your browser. Keep the terminal running. Press Ctrl+C in that terminal to stop the server. No package installation is required.
+Open http://localhost:3000. Keep the terminal running and press Ctrl+C to stop. The app uses Node.js built-ins and requires no package installation.
 
-If port 3000 is occupied, use another port.
+If port 3000 is occupied, choose another port.
 
 ```powershell
 $env:PORT = 3001
 npm start
 ```
 
-Then open http://localhost:3001. Run `npm test` to verify scheduling invariants and disruption recovery.
+Open http://localhost:3001. Run the engine and resource regression checks with `npm test`.
 
-## Demonstration
+## Simulation walkthrough
 
-1. Inspect the initial school shirts, sports jerseys, and trousers schedules.
-2. Select a booking to see that order's CFP, PROPOSE, ACCEPT, and CONFIRM messages.
-3. Select an agent to inspect its goal, constraints, and latest event.
-4. Pause sewing line A before advancing time. Show the revised allocation to line B.
-5. Enable “Show previous schedule” to compare reservations.
-6. Pause both sewing lines to demonstrate waiting for capacity. Restore a line to recover.
-7. Add an urgent order, then advance the simulated clock or run automatically.
-8. Reset to replay the original scenario.
+1. Open **Factory map** and click **Run simulation** or **Advance 1 hour**. Click buildings, customers or moving trucks to inspect their agent and current work.
+2. Click **Place customer order**. Enter the customer, garment, quantity, priority, delivery location and delivery deadline in simulation hours.
+3. The manager requests a plan. Stores checks fabric, HR assigns workers, order agents solicit station offers, and the production manager commits a complete route.
+4. Logistics requests truck bids after the planned finishing time. Trucks consider capacity, travel time, multiple trips and return-to-depot commitments. The earliest final arrival is selected.
+5. Watch trucks move between the depot and three fictional customer locations. Order progress changes through cutting, sewing, finishing, dispatch and delivery.
+6. Click **Watch agent communication** on the map to replay recorded messages and highlight sender/receiver connections. **Follow live** returns to current events. Message replay and production time have separate controls.
+7. Open **Order calendar** for daily production bookings, dispatches, arrivals and customer deadlines. The resource schedule includes truck return time. Select a booking to inspect its order.
+8. Open **Agent messages** for ACL-style fields, conversations and recorded decisions. Selecting an order makes its conversation filter available.
+9. Open **MAS demonstrations** for reproducible outage, worker absence, fabric shortage, fleet shortage, road disruption, urgent order and joining-agent scenarios. Each scenario resets the world.
 
-## Scheduling model
+## Agent responsibilities
 
-Each order follows cutting, sewing, and finishing. Station agents calculate available slots using quantity and production rate. Order agents compare complete candidate routes and choose the earliest finish. The coordinator commits each route atomically, processing requests by descending priority, earliest deadline, and submission order. The single Node.js event loop serializes actions to prevent concurrent reservation conflicts.
+| Agent | Decision and visible effect |
+| --- | --- |
+| Customer | Submits garment requirements and receives delivery commitments |
+| Order | Requests stage capacity and selects the earliest complete production route |
+| Operations manager | Approves requests and applies priority and delivery requirements |
+| Production manager / coordinator | Commits routes without conflicting station reservations |
+| HR | Allocates staff across stations, reducing effective rates during absence |
+| Stores / warehouse | Reserves fabric, issues it at cutting and holds finished goods for dispatch |
+| Cutting, sewing and finishing | Offer available time slots using capacity, staffing and existing bookings |
+| Calendar | Publishes production commitments, delivery arrivals and deadline outcomes |
+| Logistics | Invites truck bids and chooses the earliest final customer arrival |
+| Truck | Offers feasible delivery slots, observes load capacity and reserves return journeys |
+| Monitor | Reports production and road disruptions to trigger replanning |
 
-The monitor announces station disruptions. Completed and active operations remain booked. Future operations are renegotiated. Pausing a station represents withdrawing future capacity while active work finishes. The clock uses continuous production hours with no shift calendar. An impossible due date is reported as late. Unavailable production routes wait for capacity.
+The agent inspector exposes goals, beliefs, intentions, sensors, actions and recent decisions. Stores has a fabric receipt control. HR has an attendance control. Production stations and trucks have pause/restore controls.
 
-## Architecture
+## Resource and time model
 
-`backend/engine.js` owns agents and the simulation state. `backend/server.js` serves the website and JSON actions, with server-sent events for live browser updates. `frontend/` contains the responsive dashboard, Gantt chart, order form, agent inspector, and filtered message history.
+- One garment consumes one metre of fabric. Fabric is reserved only for feasible production routes and consumed once when cutting begins. Stock can be replenished from the Stores inspector.
+- The initial workforce has ten people. HR protects staff on active operations, spreads minimum crews across available stations, then fills target crews. Production rate scales with assigned workers. Attendance changes cannot remove workers from active work.
+- The initial fleet has two trucks with capacities of 150 and 200 garments. Larger orders use repeated round trips. The order is delivered when its last load arrives. Truck calendars reserve the full duration through the final return.
+- Customers occupy three fixed locations on a fictional campus map. Normal one-way journeys take two or three simulated hours. Road disruption doubles future journey times.
+- Deadlines refer to final delivery. Production schedules and truck schedules expose late plans. Finished goods wait if every truck is unavailable.
+- Replanning preserves operations and journeys whose start is earlier than the current simulation hour. Pausing a busy resource withdraws future capacity while its active work completes.
+- The clock starts at 08:00 on 25 November 2026 and advances continuously with no shift calendar. The displayed dates are fictional simulation dates. Each automatic tick advances one hour.
+- Reset and server restart restore seeded data. State is shared across browser tabs and held in memory.
 
-State is shared across local browser tabs and retained in memory until reset or server restart. The server binds to the local computer. This version uses plain browser JavaScript and Node.js built-ins. Persistence, shift calendars, and separate agent processes can be added as further implementations.
+## MAS demonstrations and scope
 
-## Assignment coverage
+Messages expose a sender, receiver, performative, conversation ID, ontology and protocol. The capacity negotiation uses CFP, PROPOSE, REFUSE, ACCEPT, WAIT and completion messages. Production and delivery both use bids. Scenario evidence cards report actual recorded messages and current reservations.
 
-The website demonstrates agent goals, capacity constraints, message exchange, negotiation, priority-based conflict resolution, cooperation, environment changes, and replanning. The assignment PPTX has not been supplied, so coverage against individual slides remains unverified.
+The shared capacity notice board shows current resource advertisements. BDI and PEAS fields describe the deterministic decision rules. The simulation runs in one Node.js process with serial actions and a shared world. Its Contract-Net and ACL models are simplified. Learning, coordinator failover, multi-round constraint relaxation and a measured together-versus-alone emergence benchmark remain future work.
 
-## Git workflow
-
-Implement changes on the persistent `dev` branch. After each implementation, run the relevant checks, commit with a clear human-readable message, and push `dev`. After a major implementation is verified, merge `dev` into `main` with a merge commit and push `main`. Continue subsequent work on `dev`.
+The friend's blood-network plan informed the MAS demonstrations. Coverage against every slide of the assignment PPTX remains unverified.
 
 ## Project structure
 
-- `backend/` contains the HTTP server, scheduling engine, and engine tests.
-- `frontend/` contains the dashboard HTML, CSS, and browser JavaScript.
-- `package.json` and this README stay at the root for startup and testing.
+- `backend/engine.js` contains agents, planning, inventory, staffing, truck schedules and simulation state.
+- `backend/server.js` serves the frontend, JSON actions and server-sent events.
+- `backend/engine.test.js` checks scheduling, inventory, workforce and delivery invariants.
+- `frontend/` contains the map, calendar, dashboard, agent inspector and message replay.
+- `package.json` and this README live at the root.
 
-Run `npm start` from the repository root. The backend serves the frontend and API together.
+## Git workflow
 
-## Presenting how the MAS works
-
-This project uses the garment factory scenario. The agents execute deterministic scheduling rules in one Node.js process.
-
-1. Reset the simulation. Click **Replay negotiation** to follow the recorded messages. Use **Previous message** and **Next message** to explain individual decisions. Replay controls the message presentation. **Advance 1 hour** and **Run simulation** control production time.
-2. Observe order agents send CFP requests. Station agents return PROPOSE messages containing available time slots.
-3. Inspect ACCEPT and CONFIRM messages. Orders choose the route with the earliest completion. The coordinator processes competing orders by priority, deadline, and submission order.
-4. Select an order or booking to filter its conversation. Select an agent to see its goal, constraints, and latest event.
-5. Before advancing time, pause sewing line A. The monitor sends ALERT, unavailable stations send REFUSE, and future work is negotiated again. Enable **Show previous schedule** to compare allocations.
-6. Pause both sewing lines to observe WAIT. Restore a line to let agents obtain a complete route.
-7. Add an urgent order using **New order**, then inspect the revised reservations and deadline outcome.
-8. Advance production to see INFORM messages for completed stages.
-
-The UI exposes autonomous order decisions, station capacity constraints, agent communication, negotiation, resource competition, coordination, monitoring, and disruption recovery. The assignment PPTX is unavailable in this workspace, so coverage of its individual requirements remains unverified.
-
-## MAS demonstration lab
-
-Use Station outage, Capacity shortage, Urgent order, or New agent joins to reset into a reproducible scenario. The evidence cards report actual messages, route confirmations, and changed reservations. The shared capacity notice board displays current resource advertisements. Replay a message to inspect its conversation ID, ontology, protocol, and performative. Select an agent for its BDI model and PEAS description.
-
-The blood-network reference informed these demonstrations. This implementation uses deterministic scheduling agents within one process. Its ACL-style metadata and capacity negotiation are a simplified Contract-Net model. The notice board is a read-only view of shared resource state. BDI and PEAS describe the implemented rules. Learning, coordinator failover, donor-style broadcasts, multi-round constraint relaxation, and a together-versus-alone emergence benchmark remain future work. Resource outage recovery demonstrates redundancy among sewing stations only.
+Implement changes on the persistent `dev` branch. After each completed implementation, run relevant checks, commit with a human-readable message and push `dev`. After a major verified implementation, merge `dev` into `main` with a merge commit and push `main`. Continue subsequent work on `dev`.

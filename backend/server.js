@@ -29,6 +29,10 @@ const server = http.createServer(async (req,res) => {
         case 'step': factory.step(); break;
         case 'play': factory.running = !factory.running; break;
         case 'station': factory.toggleStation(action.id); break;
+        case 'truck': factory.toggleTruck(action.id); break;
+        case 'workers': factory.setWorkers(action.count); break;
+        case 'restock': factory.restock(action.quantity); break;
+        case 'road': factory.toggleRoad(); break;
         case 'order': factory.addOrder(action.order); break;
         default: throw new Error('Unknown action');
       }
