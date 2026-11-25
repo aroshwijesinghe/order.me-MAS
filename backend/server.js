@@ -5,7 +5,7 @@ const factory = new Factory();
 const clients = new Set();
 function broadcast() { for (const client of clients) client.write(`data: ${JSON.stringify(factory.state())}\n\n`); }
 setInterval(() => { if (factory.running) { factory.step(); broadcast(); } }, 1200);
-const assets = { '/':['index.html','text/html'], '/app.js':['app.js','text/javascript'], '/style.css':['style.css','text/css'], '/assets/network-atlas.png':['assets/network-atlas.png','image/png'] };
+const assets = { '/':['index.html','text/html'], '/app.js':['app.js','text/javascript'], '/style.css':['style.css','text/css'], '/assets/network-atlas.png':['assets/network-atlas.png','image/png'], '/assets/customer-visitor.png':['assets/customer-visitor.png','image/png'] };
 const server = http.createServer(async (req,res) => {
   const pathname = new URL(req.url, 'http://localhost').pathname;
   if (req.method === 'GET' && pathname === '/events') {
@@ -33,6 +33,7 @@ const server = http.createServer(async (req,res) => {
         case 'workers': factory.setWorkers(action.count); break;
         case 'restock': factory.restock(action.quantity); break;
         case 'road': factory.toggleRoad(); break;
+        case 'visit': factory.queueCustomer(action.order); break;
         case 'order': factory.addOrder(action.order); break;
         default: throw new Error('Unknown action');
       }

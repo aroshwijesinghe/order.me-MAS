@@ -25,7 +25,7 @@ Open http://localhost:3001. Run the engine and resource regression checks with `
 ## Simulation walkthrough
 
 1. Open **Factory map** and click **Run simulation** or **Advance 1 hour**. Click buildings, customers or moving trucks to inspect their agent and current work.
-2. Click **Place customer order**. Enter the customer, garment, quantity, priority, delivery location and delivery deadline in simulation hours.
+2. Click **Place customer order**. Enter the customer, garment, quantity, priority, delivery location and delivery deadline in simulation hours, then send the customer to reception. Advance time to watch arrival, order placement and departure. The request enters production planning at arrival.
 3. The manager requests a plan. Stores checks fabric, HR assigns workers, order agents solicit station offers, and the production manager commits a complete route.
 4. Logistics requests truck bids after the planned finishing time. Trucks consider capacity, travel time, multiple trips and return-to-depot commitments. The earliest final arrival is selected.
 5. Watch illustrated trucks move between the depot and three fictional customer locations. Working production equipment animates, and paused resources appear desaturated. Order progress changes through cutting, sewing, finishing, dispatch and delivery.
@@ -50,7 +50,7 @@ Open http://localhost:3001. Run the engine and resource regression checks with `
 | Truck | Offers feasible delivery slots, observes load capacity and reserves return journeys |
 | Monitor | Reports production and road disruptions to trigger replanning |
 
-The agent inspector exposes goals, beliefs, intentions, sensors, actions and recent decisions. Stores has a fabric receipt control. HR has an attendance control. Production stations and trucks have pause/restore controls.
+Click any map agent or visiting customer to open its complete profile. The sidebar also has an **All agent details** button. Profiles expose situatedness, autonomy, adaptivity, sociability, rationality, omniscience, goals, beliefs, intentions, PEAS, available actions, task knowledge, evaluation criteria, task environment classifications and the chronological percept sequence. Stores has a fabric receipt control. HR has an attendance control. Production stations and trucks have pause/restore controls.
 
 ## Resource and time model
 
@@ -91,3 +91,18 @@ The built-in ImageGen tool generated the local transparent illustration atlas at
 The final image-generation prompt was
 
 > Create ONE production-ready UI sprite atlas image for a garment factory multi-agent simulation. Landscape canvas with EXACTLY 4 columns and 3 rows of equal rectangular cells. Each cell contains ONE separate centered small isometric 3D clay illustration, consistent perspective, soft studio lighting, forest green/teal with warm yellow accents, readable at 70px size. Generous transparent padding in every cell, no overlap, no text, no letters, no numbers, no border, no background scenery, actual transparent background. Cell order row 1 left to right: (1) delivery box truck facing right, large wheels, white cargo box and green cab, (2) operations manager person at office desk, (3) human resources team of three people, (4) warehouse full of fabric rolls and cardboard boxes. Row 2 left to right: (5) production manager person holding a clipboard standing beside a small factory, (6) upright calendar planner with small colored squares and a clock, (7) shipping depot building with loading dock and parcels, (8) monitoring computer with radar display and amber warning light. Row 3 left to right: (9) fabric cutting table with cloth and scissors, (10) industrial sewing machine with fabric, (11) quality inspection table with folded shirt and magnifying glass, (12) customer retail building with clothing shop window and a person. Keep all 12 subjects fully inside their cells and of similar visual scale. A polished coherent game asset sprite atlas, crisp silhouettes, no captions.
+
+
+## Customer visits and agent profiles
+
+New customer visits take two simulation hours to reach reception, one hour to submit and acknowledge the order, and two hours to leave. Simultaneous visitors receive successive submission slots. Orders are validated before a visit is queued and the delivery deadline must be after arrival. Submission happens exactly once. Existing seeded orders begin with their customers already at reception.
+
+Use **Customer reception visit** in MAS demonstrations for a reproducible example. Customer sprites follow the simulation clock, with display interpolation between steps. Customers disappear after returning to the entrance while their accepted orders continue.
+
+The engine records received messages and decision-time observations as percepts. The profile lists the complete recorded input history for the selected role. The controller exposes exact current modeled resource state. The implemented environment is classified as fully observable, deterministic, sequential, dynamic across simulation ticks, discrete, known and multi-agent. The profile explains the basis and distinguishes alternative classifications. Future user interventions remain unknown. Policies use reactive adaptation and fixed decision rules.
+
+Agent architecture labels are implementation-specific interpretations using the terminology in [Artificial Intelligence ? A Modern Approach, Chapter 2](https://aima.cs.berkeley.edu/4th-ed/pdfs/newchap02.pdf). The profile identifies Monitor as simple reflex, Stores/Calendar/Customer as model-based reflex, production and workforce roles as goal-based, and Order/Logistics as utility-based. Scores and evaluation criteria are explained per role.
+
+The built-in ImageGen tool generated the additional visitor sprite at `frontend/assets/customer-visitor.png` with the following final prompt.
+
+> A single full-body customer visitor walking to a garment factory reception, isolated on actual transparent background. Friendly isometric 3D clay game asset matching a forest green and warm yellow factory simulation. One adult woman wearing forest green jacket, cream trousers and yellow shoulder bag, holding a small order clipboard. Three-quarter view facing right, casual walking pose, soft studio light, polished readable silhouette, entire person inside image with generous transparent margins. No text, no extra people, no floor, no scenery. Intended as a small animated character sprite.

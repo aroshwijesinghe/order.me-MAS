@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
@@ -25,6 +25,9 @@ function createUI() {
       style: { setProperty(name, value) { this[name] = value; } },
       classList: { toggle() {} }, setAttribute() {}, matches() { return false; },
       append(child) { elements.set(child.id, child); },
+      querySelectorAll() { return [...elements.values()].filter(item => item.dataset.visit); },
+      remove() { elements.delete(this.id); },
+      showModal() { this.open = true; }, close() { this.open = false; },
       getBoundingClientRect() {
         if (id === 'agent-popup') return { width: 248, height: 110 };
         if (id.startsWith('marker-')) return { width: 88, height: 91 };
@@ -43,7 +46,7 @@ function createUI() {
   const sandbox = {
     document: {
       getElementById(id) {
-        if (id.startsWith('marker-') && !elements.has(id)) return null;
+        if ((id.startsWith('marker-') || id.startsWith('node-VISIT-')) && !elements.has(id)) return null;
         assert.ok(elements.has(id), 'Missing DOM element ' + id);
         return elements.get(id);
       },
@@ -98,6 +101,7 @@ test('sender popups escape content and red arrows terminate outside horizontal a
   assert.match(ui.elements.get('agent-popup').innerHTML, /&lt;img onerror=bad&gt;/);
   assert.ok(!ui.elements.get('agent-popup').innerHTML.includes('<img'));
   ui.elements.get('show-connections').checked = false;
+  ui.run('state.visits = []');
   ui.strokes.length = 0;
   ui.run("drawConnections({sender:'HR',receiver:'Coordinator'})");
   assert.equal(ui.strokes.length, 1);
@@ -123,4 +127,43 @@ test('all scenarios render illustrated agents and trucks through final delivery'
   factory.reset();
   for (let i = 0; i < 40; i++) { factory.step(); ui.state(factory); }
   assert.match(ui.elements.get('order-list').innerHTML, /Delivered/);
+});
+
+test('all agent profiles expose traits, PEAS, environment and actual percept history', () => {
+  const ui = createUI();
+  const factory = new Factory();
+  ui.state(factory);
+  for (const agent of ui.run('allAgents()')) {
+    ui.run('selected=' + JSON.stringify(agent.id) + '; renderAgentProfile()');
+    const profile = ui.elements.get('agent-profile').innerHTML;
+    for (const field of ['Situatedness','Autonomy','Adaptivity','Sociability','Rationality','Omniscience','Actuators','Available actions','Task knowledge','evaluation criteria','Percept sequence','Fully observable','Deterministic','Sequential','Dynamic','Discrete']) {
+      assert.ok(profile.includes(field),agent.id+' missing '+field);
+    }
+  }
+  ui.run("selected='Monitor'; renderAgentProfile()");
+  assert.match(ui.elements.get('agent-profile').innerHTML,/Simple reflex agent/);
+  ui.run("selected='Logistics'; renderAgentProfile()");
+  assert.match(ui.elements.get('agent-profile').innerHTML,/Utility-based agent/);
+  ui.run("selected='Stores'; renderAgentProfile()");
+  assert.match(ui.elements.get('agent-profile').innerHTML,/Model-based reflex agent/);
+  ui.run("selected='CUT'; renderAgentProfile()");
+  assert.match(ui.elements.get('agent-profile').innerHTML,/Goal-based agent/);
+});
+
+test('customer markers move to reception and disappear after leaving while their order stays visible', () => {
+  const ui = createUI();
+  const factory = new Factory();
+  const visit = factory.queueCustomer({name:'Visitor garments',customer:'Walk-in customer',quantity:40,priority:2,deadline:30});
+  ui.state(factory);
+  const initial = ui.elements.get('node-'+visit.id).style.top;
+  factory.step();
+  ui.state(factory);
+  assert.notEqual(ui.elements.get('node-'+visit.id).style.top,initial);
+  factory.step();
+  ui.state(factory);
+  assert.match(ui.elements.get('node-'+visit.id).innerHTML,/Order ORD-104 submitted/);
+  for(let i=0;i<3;i++){factory.step();ui.state(factory);}
+  assert.equal(ui.elements.get('node-'+visit.id).style.top,'94%');
+  assert.equal(ui.elements.get('node-'+visit.id).style.opacity,'0');
+  assert.match(ui.elements.get('order-list').innerHTML,/Visitor garments/);
 });
