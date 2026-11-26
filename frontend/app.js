@@ -318,7 +318,6 @@ function renderVisitors() {
       if (state.epoch === epoch && node.dataset.exiting) node.remove();
     }, 1100);
   }
-  const speakingVisit = active.find(visit => visit.phase === 'Placing order');
   const current = currentMapMessage();
   for (const visit of active) {
     let marker = document.getElementById('node-' + visit.id);
@@ -333,7 +332,7 @@ function renderVisitors() {
     marker.className = 'customer-marker ' + (current && messageAgentId(current.sender,current) === visit.id ? 'speaking ' : '') + (visit.phase === 'Arriving' || visit.phase === 'Leaving' ? 'walking' : '') + (visit.phase === 'Leaving' ? ' leaving' : '');
     marker.style.left = position.x + '%';
     marker.style.top = position.y + '%';
-    marker.innerHTML = '<img src="/assets/customer-visitor.png" alt="" draggable="false"><strong>' + escape(visit.customer) + '</strong><small>' + escape(visit.phase) + '</small>' + (visit.id === speakingVisit?.id ? '<span class="visit-speech">Manager, please arrange ' + visit.order.quantity + ' garments.<br>Order ' + escape(visit.orderId) + ' submitted.</span>' : '');
+    marker.innerHTML = '<img src="/assets/customer-visitor.png" alt="" draggable="false"><strong>' + escape(visit.customer) + '</strong><small>' + escape(visit.phase) + '</small>';
     marker.setAttribute('aria-label', visit.customer + ', ' + visit.phase + '. Place an order through the manager');
   }
   $('visit-status').innerHTML = '<strong>Reception visits</strong>' + (active.length ? active.map(visit => '<button data-agent="' + visit.id + '">' + escape(visit.customer) + ' | ' + escape(visit.phase) + ' | ' + ['','Normal','High','Urgent'][visit.order.priority] + ' | ' + (visit.orderId ? escape(visit.orderId) : 'Submit at ' + timeAt(visit.arriveAt)) + '</button>').join('') : '<p>Customers have left. Their orders continue through production and delivery.</p>');
