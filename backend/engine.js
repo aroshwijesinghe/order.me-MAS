@@ -1,3 +1,5 @@
+import { runRequirementDemo } from './demos.js';
+
 export const LOCATIONS = [
   { id: 'school', name: 'Valley School', x: 89, y: 20, travel: 2 },
   { id: 'sports', name: 'Sports Retail', x: 89, y: 49, travel: 3 },
@@ -14,6 +16,11 @@ export class Factory {
     this.round = 0;
     this.sequence = 0;
     this.messages = [];
+    this.blackboard = [];
+    this.boardSequence = 0;
+    this.broadcastSequence = 0;
+    this.bids = [];
+    this.demo = null;
     this.percepts = [];
     this.perceptSequence = 0;
     this.previous = [];
@@ -72,10 +79,75 @@ export class Factory {
       id: ++this.sequence, time: this.time, sender, receiver, type, detail, orderId, ...relay,
       conversationId: orderId ? 'plan-' + this.round + '-' + orderId : 'environment-' + this.round,
       ontology: 'garment-network-v2', protocol: 'capacity-contract-net',
-      performative: ({ ACCEPT: 'accept-proposal', CONFIRM: 'inform', ALERT: 'inform', WAIT: 'failure', REGISTER: 'inform', RESERVE: 'agree' })[type] || type.toLowerCase()
+      performative: ({ ACCEPT: 'accept-proposal', CONFIRM: 'inform', ALERT: 'inform', WAIT: 'failure', REGISTER: 'inform', RESERVE: 'agree', REJECT: 'reject-proposal', POST: 'inform', READ: 'query-ref', CLAIM: 'request', AGREE: 'agree' })[type] || type.toLowerCase()
     };
     this.messages.push(message);
     return message;
+  }
+
+  broadcast(sender, recipients, detail, orderId) {
+    const broadcastId = 'broadcast-' + (++this.broadcastSequence);
+    for (const receiver of recipients) {
+      this.message(sender,receiver,'INFORM',detail,orderId,{ broadcastId, recipients: [...recipients] });
+    }
+    return broadcastId;
+  }
+
+  postOffer(owner, kind, content, orderId, resource = {}) {
+    const entry = { id: 'BOARD-' + (++this.boardSequence), owner, kind, content, orderId,
+      round: this.round, time: this.time, status: 'open', readers: [], claimedBy: null, ...resource };
+    this.blackboard.push(entry);
+    this.message(owner,'Blackboard','POST',entry.id + ': ' + content,orderId,{ boardId: entry.id });
+    return entry;
+  }
+
+  readOffer(agent, entry) {
+    if (!entry.readers.includes(agent)) entry.readers.push(agent);
+    this.message(agent,'Blackboard','READ','Read ' + entry.id + ': ' + entry.content,entry.orderId,{ boardId: entry.id });
+    return entry;
+  }
+
+  claimOffer(agent, id) {
+    const entry = this.blackboard.find(item => item.id === id);
+    if (!entry || entry.status !== 'open' || !entry.readers.includes(agent)) return false;
+    const production = this.bookings.some(booking => booking.offerId === id && booking.orderId === agent);
+    const delivery = this.deliveries.some(booking => booking.offerId === id && agent === 'Logistics');
+    if (!production && !delivery) return false;
+    entry.status = 'claimed';
+    entry.claimedBy = agent;
+    this.message(agent,'Blackboard','CLAIM','Claim ' + id + ' for the committed reservation',entry.orderId,{ boardId: id });
+    this.message('Blackboard',agent,'AGREE','Claim confirmed for ' + id,entry.orderId,{ boardId: id });
+    return true;
+  }
+
+  requestStationResources(booking, order) {
+    if (booking.stage === 'cutting') {
+      this.message(booking.station,'Stores','REQUEST','Confirm ' + order.quantity + ' m of reserved fabric',order.id);
+      this.message('Stores',booking.station,'INFORM',this.materialConsumed.includes(order.id) ? 'Fabric already issued for this order' : 'Fabric reservation confirmed; issue when cutting starts',order.id);
+    }
+    const station = this.stations.find(item => item.id === booking.station);
+    this.message(booking.station,'HR','REQUEST','Confirm crew for the accepted ' + booking.stage + ' slot',order.id);
+    this.message('HR',booking.station,'INFORM',station.assigned + ' workers allocated to this station',order.id);
+  }
+
+  joinSewingLine() {
+    if (this.stations.some(station => station.id === 'SEW-C')) return;
+    this.stations.push({ id:'SEW-C', name:'Sewing line C', stage:'sewing', rate:35, required:3, assigned:0, available:true, connected:true, x:51, y:75 });
+    this.workers += 3;
+    this.message('SEW-C','Coordinator','REGISTER','New sewing agent registers 35 garments/hour and three workers');
+    this.replan();
+  }
+
+  disconnectStation(id) {
+    const station = this.stations.find(item => item.id === id);
+    if (!station) throw new Error('Unknown station');
+    station.connected = false;
+    this.message(id,'Coordinator','DEREGISTER','Agent leaves the directory; future capacity withdrawn');
+    this.replan();
+  }
+
+  demonstrateRequirement(key) {
+    return runRequirementDemo(this,key);
   }
 
   slot(station, earliest, duration, bookings) {
@@ -96,10 +168,10 @@ export class Factory {
     const idle = this.stations.filter(s => !this.isBusy(s.id));
     // Spread a minimum crew across stages before filling each station's target.
     for (const station of idle) {
-      station.assigned = station.available && remaining > 0 ? 1 : 0;
+      station.assigned = station.available && station.connected !== false && remaining > 0 ? 1 : 0;
       remaining -= station.assigned;
     }
-    for (const station of idle.filter(s => s.available && s.assigned)) {
+    for (const station of idle.filter(s => s.available && s.connected !== false && s.assigned)) {
       const extra = Math.min(remaining, station.required - station.assigned);
       station.assigned += extra;
       remaining -= extra;
@@ -113,6 +185,7 @@ export class Factory {
 
   plan() {
     this.round++;
+    for (const entry of this.blackboard.filter(entry => entry.status === 'open')) entry.status = 'expired';
     this.bookings = this.bookings.filter(b => b.start < this.time);
     this.deliveries = this.deliveries.filter(d => d.start < this.time);
     this.allocateWorkers();
@@ -128,6 +201,8 @@ export class Factory {
         this.observe('Stores', 'Fabric ledger', this.stock + ' m physical stock; ' + availableFabric + ' m unreserved for this planning round.', order.id);
         if (order.quantity > availableFabric) {
           this.message('Stores', order.id, 'WAIT', 'Fabric shortage. Need ' + order.quantity + ' m, unreserved stock ' + availableFabric + ' m.', order.id);
+          const shortage = this.postOffer('Stores','shortage','Need ' + order.quantity + ' m; only ' + availableFabric + ' m unreserved',order.id);
+          this.readOffer('Manager',shortage);
           continue;
         }
       }
@@ -143,14 +218,16 @@ export class Factory {
         for (const route of routes) {
           for (const station of eligible) {
             this.observe(station.id, 'Station state', (station.available ? 'Available' : 'Paused') + '; ' + station.assigned + ' workers; target rate ' + station.rate + ' garments/hour.', order.id);
-            if (!station.available || !station.assigned) {
-              this.message(station.id, order.id, 'REFUSE', station.available ? 'No workers assigned by HR' : 'Station paused for future bookings', order.id);
+            if (station.connected === false || !station.available || !station.assigned) {
+              this.message(station.id, order.id, 'REFUSE', station.connected === false ? 'Agent disconnected' : station.available ? 'No workers assigned by HR' : 'Station paused for future bookings', order.id);
               continue;
             }
             const effectiveRate = station.rate * station.assigned / station.required;
             const duration = Math.ceil(order.quantity / effectiveRate);
             const slot = this.slot(station, route.end, duration, [...this.bookings, ...route.bookings]);
-            const booking = { ...slot, stage, orderId: order.id, station: station.id };
+            const offer = this.postOffer(station.id,'production','Offer ' + stage + ' hours ' + slot.start + '-' + slot.end,order.id,{start:slot.start,end:slot.end,stage});
+            this.readOffer(order.id,offer);
+            const booking = { ...slot, stage, orderId: order.id, station: station.id, offerId:offer.id };
             this.message(station.id, order.id, 'PROPOSE', station.name + ' offers hours ' + slot.start + '-' + slot.end + ' with ' + station.assigned + ' workers', order.id);
             next.push({ bookings: [...route.bookings, booking], end: slot.end });
           }
@@ -158,6 +235,12 @@ export class Factory {
         routes = next;
       }
       routes.sort((a, b) => a.end - b.end);
+      const roundBids = routes.map((route,index) => ({
+        id:'BID-' + this.round + '-' + order.id + '-' + index,
+        round:this.round, orderId:order.id, finish:route.end, score:-route.end,
+        route:route.bookings.map(booking => booking.station).join(' / '), status:index === 0 ? 'accepted' : 'rejected'
+      }));
+      this.bids.push(...roundBids);
       const best = routes[0];
       if (!best) {
         this.message('Coordinator', order.id, 'WAIT', 'No complete production route available. Restore staff or station capacity.', order.id);
@@ -168,7 +251,16 @@ export class Factory {
         this.message('Stores', order.id, 'RESERVE', 'Reserve ' + order.quantity + ' m fabric. Issued when cutting starts.', order.id);
       }
       this.bookings.push(...best.bookings);
-      for (const booking of best.bookings) this.message(order.id, booking.station, 'ACCEPT', 'Reserve ' + booking.stage + ' at hours ' + booking.start + '-' + booking.end, order.id);
+      for (const booking of best.bookings) {
+        this.claimOffer(order.id,booking.offerId);
+        this.message(order.id,booking.station,'ACCEPT','Reserve ' + booking.stage + ' at hours ' + booking.start + '-' + booking.end,order.id);
+        this.requestStationResources(booking,order);
+      }
+      const selectedOffers = new Set(best.bookings.map(booking => booking.offerId));
+      for (const entry of this.blackboard.filter(entry => entry.round === this.round && entry.orderId === order.id && entry.kind === 'production' && !selectedOffers.has(entry.id))) {
+        entry.status = 'rejected';
+        this.message(order.id,entry.owner,'REJECT','Offer ' + entry.id + ' declined after comparing complete-route finish times',order.id,{boardId:entry.id});
+      }
       this.message('Coordinator', 'Calendar', 'CONFIRM', order.id + ' production finishes at hour ' + best.end, order.id);
       this.planDelivery(order, best.end);
     }
@@ -187,7 +279,9 @@ export class Factory {
       }
       const trips = Math.ceil(order.quantity / truck.capacity);
       const slot = this.slot(truck, Math.max(this.time, readyAt), travel * 2 * trips, this.deliveries.map(d => ({ station: d.truck, start: d.start, end: d.returnEnd })));
-      const bid = { orderId: order.id, truck: truck.id, destination: order.destination, start: slot.start, end: slot.end - travel, returnEnd: slot.end, travel, trips };
+      const offer = this.postOffer(truck.id,'delivery','Arrival at hour ' + (slot.end-travel) + ', return hour ' + slot.end,order.id,{start:slot.start,end:slot.end});
+      this.readOffer('Logistics',offer);
+      const bid = { offerId:offer.id, orderId: order.id, truck: truck.id, destination: order.destination, start: slot.start, end: slot.end - travel, returnEnd: slot.end, travel, trips };
       this.message(truck.id, 'Logistics', 'PROPOSE', trips + ' trip(s). Final arrival hour ' + bid.end + ', return hour ' + bid.returnEnd, order.id);
       bids.push(bid);
     }
@@ -198,6 +292,11 @@ export class Factory {
       return;
     }
     this.deliveries.push(best);
+    this.claimOffer('Logistics',best.offerId);
+    for (const bid of bids.filter(bid => bid !== best)) {
+      this.blackboard.find(entry => entry.id === bid.offerId).status = 'rejected';
+      this.message('Logistics',bid.truck,'REJECT','Another delivery bid has an earlier arrival or wins the trip-count tie-break',order.id);
+    }
     this.message('Logistics', best.truck, 'ACCEPT', 'Dispatch at hour ' + best.start + ' to ' + order.customer, order.id);
     this.message('Calendar', 'CUSTOMER-' + order.destination, 'CONFIRM', 'Delivery booked at hour ' + best.end + '. ' + (best.end <= order.deadline ? 'Delivery deadline met.' : 'Delivery is ' + (best.end - order.deadline) + ' hours late.'), order.id);
   }
@@ -326,6 +425,14 @@ export class Factory {
     this.orders.push(order);
     this.message('CUSTOMER-' + order.destination, 'Manager', 'REQUEST', 'Place ' + order.quantity + ' garments for ' + order.customer + ', priority ' + ['','Normal','High','Urgent'][order.priority] + ', due hour ' + order.deadline, order.id);
     this.message('Manager', 'Coordinator', 'REQUEST', 'Approve order and negotiate materials, staff, production and delivery', order.id);
+    if (order.priority === 3) {
+      const recipients = this.stations.filter(station => station.stage === 'sewing' && station.connected !== false).map(station => station.id);
+      const broadcastId = this.broadcast('Manager',recipients,'Urgent order ' + order.id + ': report sewing capacity',order.id);
+      for (const id of recipients) {
+        const station = this.stations.find(item => item.id === id);
+        this.message(id,'Manager','INFORM',station.available ? 'Sewing capacity advertised at ' + station.rate + ' garments/hour' : 'Currently unavailable',order.id,{inReplyTo:broadcastId});
+      }
+    }
     this.replan();
     return order;
   }
@@ -382,12 +489,7 @@ export class Factory {
     if (name === 'fabric') this.addOrder({ name: 'Large export batch', quantity: 800, priority: 1, deadline: 65, destination: 'workwear' });
     if (name === 'truck') { this.toggleTruck('TRUCK-1'); this.toggleTruck('TRUCK-2'); }
     if (name === 'road') this.toggleRoad();
-    if (name === 'join') {
-      this.stations.push({ id: 'SEW-C', name: 'Sewing line C', stage: 'sewing', rate: 35, required: 3, available: true, x: 51, y: 75 });
-      this.workers = 13;
-      this.message('SEW-C', 'Coordinator', 'REGISTER', 'New sewing agent joins with three workers');
-      this.replan();
-    }
+    if (name === 'join') this.joinSewingLine();
   }
 
   orderStatus(order) {
@@ -404,7 +506,7 @@ export class Factory {
   state() {
     const reserved = this.orders.filter(o => !this.materialConsumed.includes(o.id) && this.bookings.some(b => b.orderId === o.id && b.stage === 'cutting')).reduce((sum, o) => sum + o.quantity, 0);
     return {
-      randomTraffic: { ...this.randomTraffic }, percepts: this.percepts, epoch: this.epoch, round: this.round, time: this.time, running: this.running,
+      demo: this.demo, blackboard:this.blackboard, bids:this.bids, randomTraffic: { ...this.randomTraffic }, percepts: this.percepts, epoch: this.epoch, round: this.round, time: this.time, running: this.running,
       orders: this.orders.map(o => ({ ...o, status: this.orderStatus(o) })),
       visits: this.visits.map(v => ({ ...v, phase: this.visitPhase(v) })),
       stations: this.stations, trucks: this.trucks, deliveries: this.deliveries,
