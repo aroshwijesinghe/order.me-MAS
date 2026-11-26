@@ -1,5 +1,3 @@
-import { runRequirementDemo } from './demos.js';
-
 export const LOCATIONS = [
   { id: 'school', name: 'Valley School', x: 89, y: 20, travel: 2 },
   { id: 'sports', name: 'Sports Retail', x: 89, y: 49, travel: 3 },
